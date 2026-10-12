@@ -56,16 +56,33 @@ public class SpamHeuristicScorer {
             }
         }
 
-        // Suspicious TLD
+        // Suspicious TLD (check email addresses AND URL hosts in the body)
         if (body != null) {
+            boolean suspicious = false;
             Matcher m = EMAIL_PATTERN.matcher(body);
             while (m.find()) {
-                String tld = m.group(3).toLowerCase();
-                if (isSuspiciousTld(tld)) {
-                    score += SUSPICIOUS_TLD;
-                    details.put("suspicious_tld", SUSPICIOUS_TLD);
-                    break; // Only count once
+                if (isSuspiciousTld(m.group(3).toLowerCase())) {
+                    suspicious = true;
+                    break;
                 }
+            }
+            if (!suspicious) {
+                Matcher u = URL_PATTERN.matcher(body);
+                while (u.find()) {
+                    String host = u.group().replaceFirst("^https?://", "");
+                    int slash = host.indexOf('/');
+                    if (slash >= 0) host = host.substring(0, slash);
+                    int dot = host.lastIndexOf('.');
+                    if (dot >= 0 && dot < host.length() - 1
+                            && isSuspiciousTld(host.substring(dot + 1).toLowerCase())) {
+                        suspicious = true;
+                        break;
+                    }
+                }
+            }
+            if (suspicious) {
+                score += SUSPICIOUS_TLD;
+                details.put("suspicious_tld", SUSPICIOUS_TLD);
             }
         }
 

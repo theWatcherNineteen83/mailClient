@@ -11,12 +11,12 @@
 
 | Task | Description | Status | Owner |
 |---|---|---|---|
-| M0-001 | Create Gradle multi-project repository structure | ⏳ PENDING | Prometheus |
+| M0-001 | Create Gradle multi-project repository structure | ✅ DONE | Prometheus (12.10.) |
 | M0-002 | Implement MailAddress (RFC 5322 parsing, display, validation) | ✅ DONE | Metis |
 | M0-003 | Implement MailMessage data model (From/To/Subject/Date/Body) | ✅ DONE | Metis |
 | M0-004 | Implement HTML sanitizer (whitelist, no exceptions) | ✅ DONE | Prometheus (Bugfix 12.10.) |
 | M0-005 | Implement attachment policy (type blocking, size limits) | ✅ DONE | Metis |
-| M0-006 | Write unit tests for M0 modules | ⏳ PENDING | Prometheus |
+| M0-006 | Write unit tests for M0 modules | ✅ DONE | Prometheus (12.10., 44 JUnit-5-Tests grün) |
 
 ### Phase 2: Protocols (M1)
 
@@ -73,11 +73,13 @@
 
 ## Verification (12.10.2026)
 
-- Alle 8 Module kompilieren mit `javac --release 17` (exit 0).
-- Smoke-Tests: HtmlSanitizer OK, MboxSplitter OK, AuthenticationResultsParser OK, SpamHeuristicScorer OK, ClamdClient per Code-Review verifiziert.
+- Gradle Multi-Project (`settings.gradle` + `core/`): `gradle build` erfolgreich (Gradle 9.5.1, JDK 25, Release-Level 17).
+- 44 JUnit-5-Tests für alle M0/M2-Module: **alle grün** (`gradle test`).
+- Quellen umgezogen: `metis-modules/` → `core/src/main/java/de/metis/mail/...`
+- ClamdClient-Integrationstest gegen echten clamd ausstehend (M2-004).
 
 ## Next Actions
 
-1. M0-001: Gradle Multi-Project Struktur aufsetzen (settings.gradle + Modul-Builds)
-2. M0-006: JUnit-5-Unit-Tests für alle M0-Module schreiben
-3. M1-001: IMAP-Implementierung via Jakarta Mail starten
+1. M1-001: IMAP-Implementierung via Jakarta Mail starten
+2. M1-002/M1-003: SMTP + Basic Auth
+3. M2-004: Security-Tests gegen bekannte Angriffe (inkl. ClamdClient-Livetest)

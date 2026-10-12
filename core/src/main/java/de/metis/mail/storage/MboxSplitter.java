@@ -70,26 +70,28 @@ public class MboxSplitter {
         String[] lines = mboxContent.split("\n");
         for (String line : lines) {
             if (line.startsWith(MBOX_DELIMITER)) {
+                trimTrailingWhitespace(current);
                 if (current.length() > 0) {
-                    while (current.length() > 0 && Character.isWhitespace(current.charAt(current.length() - 1))) {
-                        current.setLength(current.length() - 1);
-                    }
                     messages.add(current.toString());
-                    current = new StringBuilder();
                 }
+                current = new StringBuilder();
                 current.append("From ").append(line.substring(MBOX_DELIMITER.length())).append("\n");
             } else {
                 current.append(line).append("\n");
             }
         }
 
+        trimTrailingWhitespace(current);
         if (current.length() > 0) {
-            while (current.length() > 0 && Character.isWhitespace(current.charAt(current.length() - 1))) {
-                current.setLength(current.length() - 1);
-            }
             messages.add(current.toString());
         }
 
         return messages;
+    }
+
+    private static void trimTrailingWhitespace(StringBuilder sb) {
+        while (sb.length() > 0 && Character.isWhitespace(sb.charAt(sb.length() - 1))) {
+            sb.setLength(sb.length() - 1);
+        }
     }
 }

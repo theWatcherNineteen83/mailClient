@@ -1,0 +1,3 @@
+rootProject.name = 'mail-client-modular'
+
+include 'core'
