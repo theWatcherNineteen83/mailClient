@@ -2,3 +2,4 @@ rootProject.name = 'mail-client-modular'
 
 include 'core'
 include 'protocol'
+include 'storage'

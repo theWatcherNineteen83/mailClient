@@ -26,6 +26,7 @@
 | M1-002 | Implement SMTP protocol support via Jakarta Mail | ✅ DONE | Prometheus (12.10., `protocol`-Modul) |
 | M1-003 | Implement basic authentication (username/password) | ✅ DONE | Prometheus (12.10., MailClientConfig) |
 | M1-004 | Test against real IMAP/SMTP servers | ✅ DONE | Prometheus (12.10., GreenMail-Integrationstests: 4/4 grün, inkl. Round-Trip + Wrong-Password) |
+| M1-005 | POP3-Unterstützung (auf Georgs Wunsch, 12.10.) | ✅ DONE | Prometheus (12.10., `Pop3MailClient` + 4 GreenMail-POP3-Tests: Fetch, Delete/Expunge, Wrong-Password, Not-Connected) |
 
 ### Phase 3: Security & Spam (M2)
 
@@ -40,10 +41,10 @@
 
 | Task | Description | Status | Owner |
 |---|---|---|---|
-| M3-001 | Implement SQLite database schema | ⏳ PENDING | Prometheus |
-| M3-002 | Implement email sync logic | ⏳ PENDING | Prometheus |
-| M3-003 | Implement message threading | ⏳ PENDING | Prometheus |
-| M3-004 | Optimize for large mailboxes (100K+ emails) | ⏳ PENDING | Prometheus |
+| M3-001 | Implement SQLite database schema | ✅ DONE | Prometheus (12.10., `storage`-Modul: MailStore mit accounts/folders/messages/attachments, WAL, Indizes, Attachments auf Disk) |
+| M3-002 | Implement email sync logic | ✅ DONE | Prometheus (12.10., MailSyncService: IMAP+POP3 → Spam-Score → SQLite-Upsert, Dedupe per Message-ID) |
+| M3-003 | Implement message threading | ✅ DONE | Prometheus (12.10., MessageThreader: JWZ-lite über References/In-Reply-To, zyklusfest, 10 Unit-Tests) |
+| M3-004 | Optimize for large mailboxes (100K+ emails) | ✅ DONE | Prometheus (12.10., Perf-Test real gemessen: 100K Inserts 1,1 s (~94K msg/s), Deep-Page 82 ms, LIKE-Suche 58 ms, Voll-Read 458 ms) |
 
 ### Phase 5: Desktop UI (M4)
 
@@ -71,9 +72,16 @@
 | BUG-004 | AuthenticationResultsParser | Status-Parsing korrekt (pass/fail), aber `domain`-Feld immer null | ✅ FIXED 12.10.2026 — Domain-Extraktion aus smtp.mailfrom/header.d/header.from. Nachfix M2-004: Rewrite auf RFC-8601-Pattern `(spf\|dkim\|dmarc)=([a-z]+)` — kannte vorher Status `none` nicht und matchte `pass`/`fail` substring-basiert (falsch z.B. bei Domain `pass.example.com`). Test grün. |
 | BUG-005 | SpamHeuristicScorer | Feuert zu spät: Test-Spam score nur 25/100 (erwartet >60) | ✅ FIXED 12.10.2026 — 6 Heuristiken (Sender-Mismatch, suspicious TLD in E-Mails UND URL-Hosts, Uppercase-Subject, Link-Count, Urgency-Words, Missing-Auth). Test-Spam: 70/100, Clean: 0/100. Test grün. |
 
-## Verification (12.10.2026)
+## Verification (12.10.2026, Stand M3+POP3)
 
-- Gradle Multi-Project (`settings.gradle` + `core/` + `protocol/`): `gradle build` erfolgreich (Gradle 9.5.1, JDK 25, Release-Level 17).
+- Gradle Multi-Project (`settings.gradle` + `core/` + `protocol/` + `storage/`): `gradle build` erfolgreich (Gradle 9.5.1, JDK 25, Release-Level 17).
+- **131 JUnit-5-Tests, 0 Failures** (`gradle test`).
+- POP3: `Pop3MailClient` (connect/fetch/count/delete-expunge) + 4 GreenMail-POP3-Integrationstests grün.
+- M3-001: `MailStore` (SQLite, WAL, Indizes, Upsert-Dedupe per Message-ID mit Content-Hash-Fallback, Attachments als Dateien auf Disk + Metadaten in DB, Paging, Suche, Flags, Persistenz über Reopen getestet).
+- M3-002: `MailSyncService` — IMAP/POP3 → SpamHeuristicScorer → SQLite; End-to-End-Test (SMTP → GreenMail → IMAP-Fetch → Sync → DB) grün; Re-Sync dupliziert nicht; Spam-Score landet in DB.
+- M3-003: `MessageThreader` (JWZ-lite: References/In-Reply-To, Empty-Container-Pruning, Zyklus- und Duplikatfest, Thread-ID = kleinste DB-ID); 10 Unit-Tests + Threading-nach-Sync-Integrationstest grün.
+- M3-004 (real gemessen auf kali): **100K Inserts: 1,1 s (~94K msg/s)** · Deep-Page-Query (offset 99950): 82 ms · LIKE-Suche: 58 ms · Voll-Read für Threading: 458 ms.
+- Frühere Verification (M0/M2) bleibt gültig.
 - **103 JUnit-5-Tests, 0 Failures** (`gradle test`): Core (MailAddress, MailMessage, HtmlSanitizer, AttachmentPolicy, AuthParser, SpamScorer, MboxSplitter, ClamdClient-Mock-Protokolltest, SecurityAttack-Korpus) + Protocol (4 GreenMail-Integrationstests).
 - M2-004: XSS-Korpus 27 Vektoren (script/onerror/javascript:/data:/iframe/svg/style/Nested-Tag-Reassembly/IE-Conditionals) grün; Attachment-Evasion (Doppelendungen, Case-Mix, Blocklist) grün; ClamdClient gegen Mock-clamd grün.
 - Dabei 2 echte Bugs gefunden+gefixt: ClamdClient streamte rohe Bytes ohne Längenpräfix-Chunks; AuthParser ohne `none`-Status + Substring-Matching. Siehe BUG-002/BUG-004.
@@ -81,7 +89,7 @@
 
 ## Next Actions
 
-1. M3-001: SQLite-Datenbankschema (neues Modul `storage/`)
-2. M3-002: Sync-Logik (IMAP → SQLite)
-3. M3-003: Message-Threading (References/In-Reply-To)
-4. Optional: `sudo apt install clamav-daemon` auf kali für echten EICAR-Livetest (mit Georg abstimmen)
+1. M4-001: JavaFX-UI-Shell (neues Modul `desktop/`)
+2. M4-002: UI an Core/Storage anbinden (Folder-Liste, Mail-Liste mit Threading, Reader mit HtmlSanitizer)
+3. Heute Abend mit Georg (vor Ort, sudo): `sudo apt install clamav-daemon` → echter EICAR-Livetest gegen ClamdClient
+4. Optional: IMAP/SMTP/POP3-Livetest gegen Strato-Postfach (nur mit Georgs OK)
