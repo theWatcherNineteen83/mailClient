@@ -46,13 +46,19 @@
 | M3-003 | Implement message threading | ✅ DONE | Prometheus (12.10., MessageThreader: JWZ-lite über References/In-Reply-To, zyklusfest, 10 Unit-Tests) |
 | M3-004 | Optimize for large mailboxes (100K+ emails) | ✅ DONE | Prometheus (12.10., Perf-Test real gemessen: 100K Inserts 1,1 s (~94K msg/s), Deep-Page 82 ms, LIKE-Suche 58 ms, Voll-Read 458 ms) |
 
-### Phase 5: Desktop UI (M4)
+### Phase 5: Desktop UI (M4) — **Swing** (Vorgabe: `.specify/spec-ui.md`, Georg 12.10.2026)
 
 | Task | Description | Status | Owner |
 |---|---|---|---|
-| M4-001 | Implement JavaFX UI shell | ⏳ PENDING | Prometheus |
-| M4-002 | Connect UI to core modules | ⏳ PENDING | Prometheus |
-| M4-003 | Polish desktop experience | ⏳ PENDING | Prometheus |
+| M4-001 | Swing-UI-Shell: Hauptfenster, Menü, neues Modul `desktop/` | ⏳ PENDING | Prometheus |
+| M4-002 | Pluggables Layout-System: `MailUILayout`-Interface + Presets Default/Thunderbird/Outlook/Gmail, zur Laufzeit tauschbar, Wahl persistiert | ⏳ PENDING | Prometheus |
+| M4-003 | Account-Verwaltung per UI: mehrere Konten (IMAP/POP3+SMTP), CRUD, Test-Login, Passwörter verschlüsselt gespeichert | ⏳ PENDING | Prometheus |
+| M4-004 | Mail-Liste + Lesebereich: Sortierung, Paging, HTML saniert via JEditorPane, Header + SPF/DKIM/DMARC-Badge, Spam-Ampel | ⏳ PENDING | Prometheus |
+| M4-005 | Threading als Option: flache Liste ↔ Konversations-Gruppierung umschaltbar (Backend: MessageThreader/thread_id) | ⏳ PENDING | Prometheus |
+| M4-006 | Suche + Attachments: Suchfeld (SQLite-Suche), Attachments anzeigen/öffnen/speichern | ⏳ PENDING | Prometheus |
+| M4-007 | Composer: Schreiben/Antworten/Antw. an alle/Weiterleiten via SMTP, Multipart + Attachments | ⏳ PENDING | Prometheus |
+| M4-008 | Flags/Sync: Gelesen/Ungesehen/Flag/Soft-Delete, Sync-Status pro Account, Worker-Threads (kein IO auf EDT) | ⏳ PENDING | Prometheus |
+| M4-009 | Polish: System-LAF, HiDPI, Tray (Backlog), Smoke-Tests headless | ⏳ PENDING | Prometheus |
 
 ### Phase 6: Android UI (M5)
 
