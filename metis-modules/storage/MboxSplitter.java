@@ -2,202 +2,96 @@ package de.metis.mail.storage;
 
 import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.Reader;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
-import java.util.NoSuchElementException;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
-public class MboxSplitter implements Iterator<String>, Iterable<String> {
-    private static final Logger LOG = Logger.getLogger(MboxSplitter.class.getName());
+/**
+ * Splits an mbox file into individual EML messages.
+ * Uses >From delimiter (RFC 4180).
+ */
+public class MboxSplitter {
 
-    private static final String FROM_MARKER = "From ";
-    private static final String ESCAPE_PREFIX = ">From ";
-    private static final String FROM_LINE_START = "From:";
+    private static final String MBOX_DELIMITER = ">From ";
 
-    private final Reader reader;
-    private final BufferedReader bufferedReader;
-    private String currentLine;
-    private String pendingLine;
-    private List<String> currentMessageLines;
-    private boolean messageInProgress;
-    private boolean hasNext;
+    /**
+     * Split an mbox file into individual EML strings.
+     *
+     * @param mboxPath Path to the mbox file
+     * @return List of EML message strings
+     * @throws IOException If file cannot be read
+     */
+    public List<String> split(Path mboxPath) throws IOException {
+        List<String> messages = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
 
-    public MboxSplitter(Reader reader) {
-        if (reader == null) {
-            throw new IllegalArgumentException("Reader must not be null");
-        }
-        this.reader = reader;
-        this.bufferedReader = new BufferedReader(reader);
-        this.currentMessageLines = new ArrayList<>();
-        this.messageInProgress = false;
-        this.currentLine = null;
-        this.pendingLine = null;
-        this.hasNext = false;
-    }
-
-    private boolean isFromLine(String line) {
-        if (line == null || line.length() < FROM_MARKER.length()) {
-            return false;
-        }
-        if (line.startsWith(FROM_MARKER)) {
-            return true;
-        }
-        if (line.startsWith(ESCAPE_PREFIX)) {
-            return false;
-        }
-        return false;
-    }
-
-    private String unescapeLine(String line) {
-        if (line == null) {
-            return null;
-        }
-        if (line.startsWith(ESCAPE_PREFIX)) {
-            return FROM_MARKER + line.substring(ESCAPE_PREFIX.length());
-        }
-        return line;
-    }
-
-    private String readLine() throws IOException {
-        return bufferedReader.readLine();
-    }
-
-    private boolean ensureHasNext() throws IOException {
-        if (hasNext) {
-            return true;
-        }
-
-        if (pendingLine != null) {
-            currentLine = pendingLine;
-            pendingLine = null;
-        } else {
-            currentLine = readLine();
-            if (currentLine == null) {
-                hasNext = false;
-                return false;
-            }
-        }
-
-        if (isFromLine(currentLine)) {
-            if (messageInProgress && !currentMessageLines.isEmpty()) {
-                hasNext = true;
-                return true;
-            }
-
-            messageInProgress = true;
-            currentMessageLines.clear();
-
-            String nextLine = readLine();
-            if (nextLine == null) {
-                if (!currentMessageLines.isEmpty()) {
-                    hasNext = true;
-                    return true;
+        try (BufferedReader reader = Files.newBufferedReader(mboxPath)) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (line.startsWith(MBOX_DELIMITER)) {
+                    // Previous message ended, start new one
+                    if (current.length() > 0) {
+                        // Trim trailing blank lines from previous message
+                        while (current.length() > 0 && Character.isWhitespace(current.charAt(current.length() - 1))) {
+                            current.setLength(current.length() - 1);
+                        }
+                        messages.add(current.toString());
+                        current = new StringBuilder();
+                    }
+                    // This >From line is the start of a new message envelope
+                    // Convert >From to From
+                    current.append(line.substring(MBOX_DELIMITER.length()));
+                } else {
+                    current.append(line).append("\n");
                 }
-                messageInProgress = false;
-                hasNext = false;
-                return false;
             }
-
-            pendingLine = nextLine;
-            hasNext = true;
-            return true;
         }
 
-        if (messageInProgress) {
-            currentMessageLines.add(unescapeLine(currentLine));
-
-            String nextLine = readLine();
-            if (nextLine != null && isFromLine(nextLine)) {
-                hasNext = true;
-                return true;
+        // Don't forget the last message
+        if (current.length() > 0) {
+            while (current.length() > 0 && Character.isWhitespace(current.charAt(current.length() - 1))) {
+                current.setLength(current.length() - 1);
             }
+            messages.add(current.toString());
+        }
 
-            if (nextLine == null) {
-                hasNext = true;
-                messageInProgress = false;
-                return true;
-            }
+        return messages;
+    }
 
-            pendingLine = nextLine;
-            hasNext = true;
-            return true;
-        } else {
-            if (currentLine.startsWith(FROM_LINE_START)) {
-                messageInProgress = true;
-                currentMessageLines.clear();
-                currentMessageLines.add(currentLine);
+    /**
+     * Split an mbox string into individual EML strings.
+     *
+     * @param mboxContent The mbox content
+     * @return List of EML message strings
+     */
+    public List<String> split(String mboxContent) {
+        List<String> messages = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
 
-                String nextLine = readLine();
-                if (nextLine == null) {
-                    hasNext = true;
-                    messageInProgress = false;
-                    return true;
+        String[] lines = mboxContent.split("\n");
+        for (String line : lines) {
+            if (line.startsWith(MBOX_DELIMITER)) {
+                if (current.length() > 0) {
+                    while (current.length() > 0 && Character.isWhitespace(current.charAt(current.length() - 1))) {
+                        current.setLength(current.length() - 1);
+                    }
+                    messages.add(current.toString());
+                    current = new StringBuilder();
                 }
-                pendingLine = nextLine;
-                hasNext = true;
-                return true;
+                current.append(line.substring(MBOX_DELIMITER.length()));
+            } else {
+                current.append(line).append("\n");
             }
+        }
 
-            String nextLine = readLine();
-            if (nextLine == null) {
-                hasNext = false;
-                return false;
+        if (current.length() > 0) {
+            while (current.length() > 0 && Character.isWhitespace(current.charAt(current.length() - 1))) {
+                current.setLength(current.length() - 1);
             }
-            pendingLine = nextLine;
-            hasNext = false;
-            return false;
-        }
-    }
-
-    @Override
-    public boolean hasNext() {
-        try {
-            return ensureHasNext();
-        } catch (IOException e) {
-            LOG.log(Level.SEVERE, "Error while checking for next message", e);
-            return false;
-        }
-    }
-
-    @Override
-    public String next() {
-        if (!hasNext()) {
-            throw new NoSuchElementException("No more messages");
+            messages.add(current.toString());
         }
 
-        List<String> lines = currentMessageLines;
-        messageInProgress = false;
-        currentMessageLines = new ArrayList<>();
-        hasNext = false;
-
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < lines.size(); i++) {
-            if (i > 0) {
-                sb.append("\n");
-            }
-            sb.append(lines.get(i));
-        }
-        return sb.toString();
-    }
-
-    @Override
-    public void remove() {
-        throw new UnsupportedOperationException("Remove operation is not supported");
-    }
-
-    @Override
-    public Iterator<String> iterator() {
-        return this;
-    }
-
-    public void close() {
-        try {
-            reader.close();
-        } catch (IOException e) {
-            LOG.log(Level.WARNING, "Error while closing reader", e);
-        }
+        return messages;
     }
 }

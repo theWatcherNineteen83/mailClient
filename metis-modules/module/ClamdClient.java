@@ -1,162 +1,100 @@
 package de.metis.mail.module;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.net.InetSocketAddress;
+import java.io.*;
 import java.net.Socket;
-import java.net.SocketTimeoutException;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.logging.Level;
+import java.nio.charset.StandardCharsets;
 import java.util.logging.Logger;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
-public class ClamdClient {
+/**
+ * ClamAV client using the real clamd TCP protocol.
+ * Communicates over TCP port 3310.
+ */
+public class ClamdClient implements AutoCloseable {
+
     private static final Logger LOG = Logger.getLogger(ClamdClient.class.getName());
-    private static final int CHUNK_SIZE = 32 * 1024;
-    private static final int INCR_TIMEOUT = 25;
-    private static final Pattern VERDICT_PATTERN = Pattern.compile("^(.*)\\s+(OK|FOUND|VIRUS|INFECTED|STREAMERROR|ERROR|INSTREAMERROR|EACCES)$");
+    private static final String TERMINATOR = "\n";
+    private static final String COMMAND_PING = "PING";
+    private static final String COMMAND_VERSION = "VERSION";
+    private static final String COMMAND_INSTREAM = "INSTREAM";
 
     private final String host;
     private final int port;
-    private final int connectTimeoutMs;
-    private final int socketTimeoutMs;
+    private Socket socket;
+    private BufferedReader reader;
+    private OutputStream writer;
 
-    public ClamdClient(String host, int port, int connectTimeoutMs, int socketTimeoutMs) {
+    public ClamdClient(String host, int port) {
         this.host = host;
         this.port = port;
-        this.connectTimeoutMs = connectTimeoutMs;
-        this.socketTimeoutMs = socketTimeoutMs;
     }
 
-    public boolean ping() {
-        try (Socket socket = connect()) {
-            socket.getOutputStream().write("PING\n".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
-            socket.getOutputStream().flush();
-
-            String response = readLine(socket.getInputStream());
-            return "PONG: ClamAV" .equals(response) || response.startsWith("PONG: ClamAV");
-        } catch (Exception e) {
-            LOG.log(Level.SEVERE, "Clamd ping failed", e);
-            return false;
-        }
+    /**
+     * Connect to the clamd server.
+     */
+    public void connect() throws IOException {
+        socket = new Socket(host, port);
+        reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.US_ASCII));
+        writer = socket.getOutputStream();
+        LOG.info("Connected to clamd at " + host + ":" + port);
     }
 
-    public ClamVerdict scan(byte[] data) {
-        try (Socket socket = connect()) {
-            OutputStream out = socket.getOutputStream();
-            InputStream in = socket.getInputStream();
-
-            out.write(("INCR\n").getBytes(java.nio.charset.StandardCharsets.US_ASCII));
-            out.flush();
-
-            String incrResponse = readLine(in);
-            if (!"STREAM: INCR".equals(incrResponse)) {
-                throw new IOException("Invalid INCR response: " + incrResponse);
-            }
-
-            if (data != null) {
-                int offset = 0;
-                while (offset < data.length) {
-                    int len = Math.min(CHUNK_SIZE, data.length - offset);
-                    out.write(data, offset, len);
-                    out.flush();
-                    offset += len;
-
-                    String chunkResponse = readLine(in);
-                    if (!chunkResponse.equals("OK")) {
-                        throw new IOException("Invalid chunk response: " + chunkResponse);
-                    }
-                }
-            }
-
-            out.write(("END\n").getBytes(java.nio.charset.StandardCharsets.US_ASCII));
-            out.flush();
-
-            String verdictLine = readLine(in);
-            return parseVerdict(verdictLine);
-
-        } catch (Exception e) {
-            LOG.log(Level.SEVERE, "Clamd scan failed", e);
-            return new ClamVerdict(false, "Error during scan: " + e.getMessage());
-        }
+    /**
+     * Send PING command to check if clamd is alive.
+     * Real response is "PONG" followed by newline.
+     */
+    public boolean ping() throws IOException {
+        sendCommand(COMMAND_PING);
+        String response = reader.readLine();
+        return "PONG".equalsIgnoreCase(response);
     }
 
-    private Socket connect() throws IOException {
-        Socket socket = new Socket();
-        socket.connect(new InetSocketAddress(host, port), connectTimeoutMs);
-        socket.setSoTimeout(socketTimeoutMs);
-        return socket;
+    /**
+     * Get clamd version.
+     */
+    public String version() throws IOException {
+        sendCommand(COMMAND_VERSION);
+        return reader.readLine();
     }
 
-    private String readLine(InputStream in) throws IOException {
-        StringBuilder sb = new StringBuilder();
-        int c;
-        while ((c = in.read()) != -1) {
-            if (c == '\n') {
-                break;
-            }
-            if (c == '\r') {
-                continue;
-            }
-            sb.append((char) c);
+    /**
+     * Stream file content for virus scanning via INSTREAM.
+     * Real protocol: Send INSTREAM\n, then stream bytes, then send
+     * 4 bytes of length=0 to signal EOF.
+     */
+    public String streamScan(InputStream fileData) throws IOException {
+        sendCommand(COMMAND_INSTREAM);
+        
+        // Stream the file content
+        byte[] buffer = new byte[4096];
+        int bytesRead;
+        while ((bytesRead = fileData.read(buffer)) != -1) {
+            writer.write(buffer, 0, bytesRead);
         }
-        if (sb.isEmpty()) {
-            return "";
-        }
-        return sb.toString();
+        writer.flush();
+
+        // Signal EOF with 4 bytes of length 0
+        writer.write(new byte[]{0, 0, 0, 0});
+        writer.flush();
+
+        // Read response
+        String response = reader.readLine();
+        LOG.fine("INSTREAM response: " + response);
+        
+        // Real clamd responses: "stream: OK" or "stream: VIRUS FOUND"
+        return response;
     }
 
-    private ClamVerdict parseVerdict(String line) {
-        if (line == null || line.isEmpty()) {
-            return new ClamVerdict(false, "Empty response");
-        }
-
-        Matcher matcher = VERDICT_PATTERN.matcher(line.trim());
-        if (matcher.matches()) {
-            String fileName = matcher.group(1);
-            String status = matcher.group(2);
-
-            boolean isInfected = "FOUND".equalsIgnoreCase(status) || "VIRUS".equalsIgnoreCase(status) || "INFECTED".equalsIgnoreCase(status);
-            
-            if (status.equals("OK")) {
-                return new ClamVerdict(true, "OK");
-            } else if (isInfected) {
-                return new ClamVerdict(false, "VIRUS:" + fileName);
-            } else {
-                return new ClamVerdict(false, status + ":" + fileName);
-            }
-        }
-
-        return new ClamVerdict(false, "UNPARSEABLE:" + line);
+    private void sendCommand(String command) throws IOException {
+        LOG.fine("Sending command: " + command);
+        writer.write((command + TERMINATOR).getBytes(StandardCharsets.US_ASCII));
+        writer.flush();
     }
 
-    public static class ClamVerdict {
-        private final boolean clean;
-        private final String detail;
-
-        public ClamVerdict(boolean clean, String detail) {
-            this.clean = clean;
-            this.detail = detail;
-        }
-
-        public boolean isClean() {
-            return clean;
-        }
-
-        public String getDetail() {
-            return detail;
-        }
-
-        @Override
-        public String toString() {
-            return "ClamVerdict{" +
-                    "clean=" + clean +
-                    ", detail='" + detail + '\'' +
-                    '}';
+    @Override
+    public void close() throws IOException {
+        if (socket != null) {
+            socket.close();
+            LOG.info("Disconnected from clamd");
         }
     }
 }

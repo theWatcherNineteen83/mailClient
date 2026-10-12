@@ -1,315 +1,132 @@
 package de.metis.mail.spam;
 
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
-import java.util.regex.Pattern;
 
+/**
+ * Local spam heuristic scoring engine.
+ * Uses multiple independent signals and sums their weights.
+ */
 public class SpamHeuristicScorer {
 
     private static final Logger LOG = Logger.getLogger(SpamHeuristicScorer.class.getName());
 
-    private static final Map<String, Integer> DEFAULT_WEIGHTS = new HashMap<>();
-    private static final List<String> SUSPICIOUS_TLDS = List.of("ru", "cn", "kr", "tr", "xyz", "top", "click", "link", "gq", "cf");
-    private static final List<String> URGENCY_WORDS = List.of("dringend", "urgent", "sofort", "immediate", "now", "action", "verify", "password", "pin", "code", "account", "suspend", "blocked", "win", "gewonnen", "lottery", "prize", "gift", "free", "gratis", "bonus");
-    private static final Pattern URL_PATTERN = Pattern.compile("https?://[\\S]+|www\\.[\\S]+", Pattern.CASE_INSENSITIVE);
-    private static final Pattern DOMAIN_PATTERN = Pattern.compile("[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}", Pattern.CASE_INSENSITIVE);
-    private static final Pattern AUTH_RESULT_HEADER = Pattern.compile("^authentication-results\\s*:", Pattern.CASE_INSENSITIVE);
-    private static final Pattern FROM_HEADER = Pattern.compile("^from\\s*:", Pattern.CASE_INSENSITIVE);
-    private static final Pattern RETURN_PATH_HEADER = Pattern.compile("^return-path\\s*:", Pattern.CASE_INSENSITIVE);
-    private static final Pattern SUBJECT_HEADER = Pattern.compile("^subject\\s*:", Pattern.CASE_INSENSITIVE);
+    /**
+     * Spam signal detected during scoring.
+     */
+    public static class SpamSignal {
+        public final String name;
+        public final int weight;
+        public final String reason;
 
-    static {
-        DEFAULT_WEIGHTS.put("sender_mismatch", 20);
-        DEFAULT_WEIGHTS.put("suspicious_tld", 15);
-        DEFAULT_WEIGHTS.put("uppercase_subject", 10);
-        DEFAULT_WEIGHTS.put("link_count", 10);
-        DEFAULT_WEIGHTS.put("urgency_words", 15);
-        DEFAULT_WEIGHTS.put("missing_auth", 15);
-    }
-
-    private final Map<String, Integer> weights;
-
-    public SpamHeuristicScorer() {
-        this.weights = new HashMap<>(DEFAULT_WEIGHTS);
-    }
-
-    public SpamHeuristicScorer(Map<String, Integer> customWeights) {
-        this.weights = new HashMap<>(DEFAULT_WEIGHTS);
-        if (customWeights != null) {
-            this.weights.putAll(customWeights);
+        public SpamSignal(String name, int weight, String reason) {
+            this.name = name;
+            this.weight = weight;
+            this.reason = reason;
         }
     }
 
-    public int score(String headerText, String body) {
-        List<SpamIndicator> indicators = new ArrayList<>();
-        int totalScore = 0;
+    /**
+     * Score an email based on multiple heuristics.
+     *
+     * @param email The email message data
+     * @return Map containing "score" (int 0-100) and "signals" (list of SpamSignal)
+     */
+    public Map<String, Object> score(Map<String, Object> email) {
+        Map<String, Object> result = new HashMap<>();
+        int score = 0;
+        java.util.List<SpamSignal> signals = new java.util.ArrayList<>();
 
-        String fromAddress = extractEmailFromHeader(headerText, FROM_HEADER);
-        String returnPathAddress = extractEmailFromHeader(headerText, RETURN_PATH_HEADER);
-        String subject = extractHeaderValue(headerText, SUBJECT_HEADER);
+        String from = (String) email.get("from");
+        String subject = (String) email.get("subject");
+        String body = (String) email.get("body");
+        String to = (String) email.get("to");
+        String sender = (String) email.get("sender");
+        boolean hasAttachments = (boolean) email.getOrDefault("has_attachments", false);
+        boolean isHtml = (boolean) email.getOrDefault("is_html", false);
 
-        // 1. Check Sender Mismatch (From vs Return-Path)
-        if (fromAddress != null && returnPathAddress != null) {
-            String fromDomain = extractDomain(fromAddress);
-            String returnPathDomain = extractDomain(returnPathAddress);
-            if (fromDomain != null && returnPathDomain != null && !fromDomain.equals(returnPathDomain)) {
-                int weight = weights.getOrDefault("sender_mismatch", 20);
-                totalScore += weight;
-                indicators.add(new SpamIndicator("sender_mismatch", fromDomain + " != " + returnPathDomain, weight));
-                LOG.fine("Sender mismatch detected: " + fromDomain + " vs " + returnPathDomain);
+        // 1. Sender domain mismatch (high weight)
+        if (from != null && to != null && !from.equals(to)) {
+            if (!from.contains("@" + to.substring(to.indexOf("@") + 1))) {
+                score += 15;
+                signals.add(new SpamSignal("sender_mismatch", 15, "From domain differs from recipient domain"));
             }
         }
 
-        // 2. Check Suspicious TLDs in From Address
-        if (fromAddress != null) {
-            String domain = extractDomain(fromAddress);
-            if (domain != null) {
-                String tld = extractTld(domain);
-                if (tld != null && SUSPICIOUS_TLDS.contains(tld.toLowerCase())) {
-                    int weight = weights.getOrDefault("suspicious_tld", 15);
-                    totalScore += weight;
-                    indicators.add(new SpamIndicator("suspicious_tld", "TLD: " + tld, weight));
-                    LOG.fine("Suspicious TLD detected: " + tld);
-                }
+        // 2. Suspicious TLD (high weight)
+        if (from != null) {
+            String domain = from.substring(from.indexOf("@") + 1).toLowerCase();
+            if (domain.endsWith(".biz") || domain.endsWith(".info") || domain.endsWith(".click") || 
+                domain.endsWith(".loan") || domain.endsWith(".trade")) {
+                score += 15;
+                signals.add(new SpamSignal("suspicious_tld", 15, "Suspicious TLD: " + domain));
             }
         }
 
-        // 3. Check Uppercase Subject
+        // 3. Subject analysis (medium-high weight)
         if (subject != null && !subject.isEmpty()) {
-            String upperSubject = subject.toUpperCase();
-            long upperCount = upperSubject.chars().filter(Character::isUpperCase).count();
-            long totalChars = upperSubject.chars().filter(c -> Character.isLetterOrDigit(c)).count();
-            if (totalChars > 0 && (upperCount / (double) totalChars) >= 0.5) {
-                int weight = weights.getOrDefault("uppercase_subject", 10);
-                totalScore += weight;
-                indicators.add(new SpamIndicator("uppercase_subject", "Subject: " + subject, weight));
-                LOG.fine("Uppercase subject detected: " + subject);
+            // All uppercase subject
+            if (subject.equals(subject.toUpperCase()) && subject.length() > 10) {
+                score += 10;
+                signals.add(new SpamSignal("uppercase_subject", 10, "Subject is all uppercase"));
+            }
+            
+            // Multiple exclamation marks
+            if (subject.chars().filter(c -> c == '!').count() > 2) {
+                score += 8;
+                signals.add(new SpamSignal("excessive_exclamation", 8, "Multiple exclamation marks in subject"));
             }
         }
 
-        // 4. Check Link Count in Body
+        // 4. Link density (high weight)
         if (body != null) {
-            var matcher = URL_PATTERN.matcher(body);
-            int linkCount = 0;
-            while (matcher.find()) {
-                linkCount++;
-            }
-            if (linkCount >= 3) {
-                int weight = weights.getOrDefault("link_count", 10);
-                int addedScore = Math.min(weight, linkCount); // Cap score contribution
-                totalScore += addedScore;
-                indicators.add(new SpamIndicator("link_count", "Links: " + linkCount, addedScore));
-                LOG.fine("High link count detected: " + linkCount);
+            int linkCount = (int) body.chars().filter(c -> c == 'h').count();
+            int httpCount = body.split("http").length - 1;
+            if (httpCount > 5) {
+                score += 15;
+                signals.add(new SpamSignal("high_link_count", 15, "More than 5 links in body"));
             }
         }
 
-        // 5. Check Urgency Words in Subject and Body
-        String combinedText = (subject != null ? subject : "") + " " + (body != null ? body : "");
-        String lowerText = combinedText.toLowerCase();
-        int urgencyCount = 0;
-        for (String word : URGENCY_WORDS) {
-            if (lowerText.contains(word)) {
-                urgencyCount++;
+        // 5. Urgency words (high weight)
+        if (body != null) {
+            String lower = body.toLowerCase();
+            if (lower.contains("urgent") || lower.contains("asap") || lower.contains("immediately")) {
+                score += 12;
+                signals.add(new SpamSignal("urgency_words", 12, "Urgency words detected"));
             }
-        }
-        if (urgencyCount >= 2) {
-            int weight = weights.getOrDefault("urgency_words", 15);
-            int addedScore = Math.min(weight, urgencyCount * 3);
-            totalScore += addedScore;
-            indicators.add(new SpamIndicator("urgency_words", "Count: " + urgencyCount, addedScore));
-            LOG.fine("Urgency words detected: " + urgencyCount);
+            if (lower.contains("act now") || lower.contains("limited time")) {
+                score += 10;
+                signals.add(new SpamSignal("urgency_call", 10, "Call to action urgency"));
+            }
         }
 
-        // 6. Check Missing Authentication-Results
-        boolean hasAuthResults = false;
-        String[] headerLines = headerText.split("\\r?\\n");
-        for (String line : headerLines) {
-            if (AUTH_RESULT_HEADER.matcher(line.trim()).matches()) {
-                hasAuthResults = true;
-                break;
-            }
+        // 6. Missing authentication (medium weight)
+        if (!email.containsKey("spf") && !email.containsKey("dkim") && !email.containsKey("dmarc")) {
+            score += 10;
+            signals.add(new SpamSignal("missing_auth", 10, "No SPF/DKIM/DMARC headers found"));
         }
-        if (!hasAuthResults) {
-            int weight = weights.getOrDefault("missing_auth", 15);
-            totalScore += weight;
-            indicators.add(new SpamIndicator("missing_auth", "No Authentication-Results header", weight));
-            LOG.fine("Missing Authentication-Results header");
+
+        // 7. Attachments (medium weight)
+        if (hasAttachments) {
+            score += 5;
+            signals.add(new SpamSignal("has_attachments", 5, "Email has attachments"));
+        }
+
+        // 8. HTML with suspicious elements
+        if (isHtml && body != null && body.contains("<script")) {
+            score += 10;
+            signals.add(new SpamSignal("html_script", 10, "HTML contains script tags"));
         }
 
         // Cap score at 100
-        int finalScore = Math.min(100, totalScore);
-        LOG.fine("Final spam score: " + finalScore + " with " + indicators.size() + " indicators");
+        score = Math.min(score, 100);
 
-        // Store indicators for retrieval (simple approach: return score, indicators via side-channel or static? 
-        // Requirement says "Return Score plus List of Indicators". 
-        // Since score() returns int, I need a method that returns both. 
-        // Let's create a record or a simple wrapper? Or maybe the prompt implies the method should return a composite?
-        // "Return Score plus List of Indicators" usually implies a result object.
-        // Let's refactor to return a ScoreResult object.
-        
-        // Wait, the goal says "Return Score plus List of Indicators". 
-        // If I change the signature, it's fine as long as it's meaningful.
-        // Let's create a public static class SpamScoreResult.
-        
-        return finalScore; 
-    }
-    
-    // Better approach: Return a result object
-    public SpamScoreResult evaluate(String headerText, String body) {
-        List<SpamIndicator> indicators = new ArrayList<>();
-        int totalScore = 0;
+        result.put("score", score);
+        result.put("signals", signals);
 
-        String fromAddress = extractEmailFromHeader(headerText, FROM_HEADER);
-        String returnPathAddress = extractEmailFromHeader(headerText, RETURN_PATH_HEADER);
-        String subject = extractHeaderValue(headerText, SUBJECT_HEADER);
-
-        // 1. Check Sender Mismatch
-        if (fromAddress != null && returnPathAddress != null) {
-            String fromDomain = extractDomain(fromAddress);
-            String returnPathDomain = extractDomain(returnPathAddress);
-            if (fromDomain != null && returnPathDomain != null && !fromDomain.equals(returnPathDomain)) {
-                int weight = weights.getOrDefault("sender_mismatch", 20);
-                totalScore += weight;
-                indicators.add(new SpamIndicator("sender_mismatch", fromDomain + " != " + returnPathDomain, weight));
-            }
-        }
-
-        // 2. Check Suspicious TLDs
-        if (fromAddress != null) {
-            String domain = extractDomain(fromAddress);
-            if (domain != null) {
-                String tld = extractTld(domain);
-                if (tld != null && SUSPICIOUS_TLDS.contains(tld.toLowerCase())) {
-                    int weight = weights.getOrDefault("suspicious_tld", 15);
-                    totalScore += weight;
-                    indicators.add(new SpamIndicator("suspicious_tld", "TLD: " + tld, weight));
-                }
-            }
-        }
-
-        // 3. Check Uppercase Subject
-        if (subject != null && !subject.isEmpty()) {
-            String upperSubject = subject.toUpperCase();
-            long upperCount = upperSubject.chars().filter(Character::isUpperCase).count();
-            long totalChars = upperSubject.chars().filter(c -> Character.isLetterOrDigit(c)).count();
-            if (totalChars > 0 && (upperCount / (double) totalChars) >= 0.5) {
-                int weight = weights.getOrDefault("uppercase_subject", 10);
-                totalScore += weight;
-                indicators.add(new SpamIndicator("uppercase_subject", "Subject: " + subject, weight));
-            }
-        }
-
-        // 4. Check Link Count
-        if (body != null) {
-            var matcher = URL_PATTERN.matcher(body);
-            int linkCount = 0;
-            while (matcher.find()) {
-                linkCount++;
-            }
-            if (linkCount >= 3) {
-                int weight = weights.getOrDefault("link_count", 10);
-                int addedScore = Math.min(weight, linkCount);
-                totalScore += addedScore;
-                indicators.add(new SpamIndicator("link_count", "Links: " + linkCount, addedScore));
-            }
-        }
-
-        // 5. Check Urgency Words
-        String combinedText = (subject != null ? subject : "") + " " + (body != null ? body : "");
-        String lowerText = combinedText.toLowerCase();
-        int urgencyCount = 0;
-        for (String word : URGENCY_WORDS) {
-            if (lowerText.contains(word)) {
-                urgencyCount++;
-            }
-        }
-        if (urgencyCount >= 2) {
-            int weight = weights.getOrDefault("urgency_words", 15);
-            int addedScore = Math.min(weight, urgencyCount * 3);
-            totalScore += addedScore;
-            indicators.add(new SpamIndicator("urgency_words", "Count: " + urgencyCount, addedScore));
-        }
-
-        // 6. Check Missing Authentication-Results
-        boolean hasAuthResults = false;
-        String[] headerLines = headerText.split("\\r?\\n");
-        for (String line : headerLines) {
-            if (AUTH_RESULT_HEADER.matcher(line.trim()).matches()) {
-                hasAuthResults = true;
-                break;
-            }
-        }
-        if (!hasAuthResults) {
-            int weight = weights.getOrDefault("missing_auth", 15);
-            totalScore += weight;
-            indicators.add(new SpamIndicator("missing_auth", "No Authentication-Results header", weight));
-        }
-
-        int finalScore = Math.min(100, totalScore);
-        return new SpamScoreResult(finalScore, indicators);
-    }
-
-    private String extractEmailFromHeader(String headerText, Pattern headerPattern) {
-        if (headerText == null) return null;
-        String[] lines = headerText.split("\\r?\\n");
-        for (String line : lines) {
-            String trimmed = line.trim();
-            if (headerPattern.matcher(trimmed).matches()) {
-                String value = trimmed.substring(headerPattern.pattern().length()).trim();
-                // Extract email from value
-                var matcher = DOMAIN_PATTERN.matcher(value);
-                if (matcher.find()) {
-                    String domain = matcher.group();
-                    // Find local part
-                    int atIndex = value.indexOf('@');
-                    if (atIndex > -1) {
-                        return value.substring(atIndex + 1).split("<|>")[0].trim();
-                    }
-                    return domain;
-                }
-            }
-        }
-        return null;
-    }
-
-    private String extractHeaderValue(String headerText, Pattern headerPattern) {
-        if (headerText == null) return null;
-        String[] lines = headerText.split("\\r?\\n");
-        for (String line : lines) {
-            String trimmed = line.trim();
-            if (headerPattern.matcher(trimmed).matches()) {
-                return trimmed.substring(headerPattern.pattern().length()).trim();
-            }
-        }
-        return null;
-    }
-
-    private String extractDomain(String email) {
-        if (email == null) return null;
-        int atIndex = email.indexOf('@');
-        if (atIndex > -1 && atIndex < email.length() - 1) {
-            return email.substring(atIndex + 1);
-        }
-        return null;
-    }
-
-    private String extractTld(String domain) {
-        if (domain == null) return null;
-        int lastDot = domain.lastIndexOf('.');
-        if (lastDot > -1 && lastDot < domain.length() - 1) {
-            return domain.substring(lastDot + 1);
-        }
-        return null;
-    }
-
-    public record SpamIndicator(String type, String detail, int points) {}
-    
-    public record SpamScoreResult(int score, List<SpamIndicator> indicators) {
-        public boolean isSpam() {
-            return score >= 50; // Arbitrary threshold
-        }
+        LOG.info("Spam score: " + score + "/100 (signals: " + signals.size() + ")");
+        return result;
     }
 }
