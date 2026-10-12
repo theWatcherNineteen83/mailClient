@@ -4,7 +4,7 @@ Modularer E-Mail-Client in Java (17+) mit Sicherheits- und Spam-Filter-Modulen.
 Entstanden aus einem Brainwriting-Konzept, erste Module von Metis generiert,
 Bugfixes, Tests und Build-Struktur von Prometheus (OpenClaw Agent).
 
-## Module (Stand: M0–M3 fertig)
+## Module (Stand: M0–M3 fertig, M4-Shell teilweise live)
 
 | Paket | Klasse | Zweck |
 |---|---|---|
@@ -24,12 +24,14 @@ Bugfixes, Tests und Build-Struktur von Prometheus (OpenClaw Agent).
 | `de.metis.mail.db` | `MailStore` | SQLite-Persistenz (WAL, Batch-Upsert, Dedupe, Paging, Suche) |
 | `de.metis.mail.sync` | `MailSyncService` | IMAP/POP3 → Spam-Score → SQLite-Sync |
 | `de.metis.mail.threading` | `MessageThreader` | JWZ-Threading über References/In-Reply-To |
+| `de.metis.mail.desktop` | `MailDesktopApp`, `MailFrame` | Swing-Shell (M4): 5 Layout-Presets, Design-Menü plattformgerecht, Compose/Antwort/Weiterleitung (lokal), Spam-Prozent-Ampel, DE/EN |
 
 ## Build
 
 ```bash
 gradle build    # kompilieren + 131 JUnit-5-Tests (inkl. GreenMail-Integration + 100K-Perf)
 gradle test     # nur Tests
+gradle :desktop:fatJar # MailClient-0.1.0.jar — ein File, Start per java -jar (JDK 17+)
 ```
 
 Voraussetzung: JDK 17+ (getestet mit JDK 25, Gradle 9.5).
@@ -66,7 +68,7 @@ liegen als Dateien auf Disk, nur Metadaten in der DB (hält die DB schlank).
 - **M1 ✅:** IMAP, POP3, SMTP via Jakarta Mail (GreenMail-Integrationstests)
 - **M2 ✅:** Security-Tests gegen bekannte Angriffe (XSS-Korpus, Attachment-Evasion, clamd-Protokolltest)
 - **M3 ✅:** SQLite-Storage, Sync, Threading, 100K-Perf-Test
-- **M4:** JavaFX Desktop-UI
+- **M4 🟡:** Desktop-UI in **Swing** (Vorgabe 12.10.2026). Live: Shell, Layouts (Default/Thunderbird/Outlook/Gmail/Foxmail), Sprachumschaltung, Design-Menü (auto/GTK/Nimbus/Metal, plattformgefiltert), Compose/Antworten/Weiterleiten lokal, Spam-Prozentanzeige, Logo-Icon. Offen: Farbschema Hell/Dunkel/Automatisch verdrahten (Theme-Klasse steht), echte Konto-Anbindung (M4-003), Attachment-UI, SMTP-Versand, CI-Build
 - **M5:** Android-UI
 
 Details: [.specify/tasks.md](.specify/tasks.md)

@@ -218,10 +218,13 @@ Alles in Core → identisch auf Desktop und Android.
 
 ## 10. Nächste Schritte
 
-- Projekt-Name festlegen
-- Repo-Layout anlegen (Gradle, Multi-Project, Apache-2.0-Lizenz)
-- M0 anfangen: `core-model` + `protocols/jakarta-mail-imap`
-- Erste Robolectric-Tests, die beweisen: **Kern läuft auf Android**
+> Stand 12.10.2026: M0–M3 fertig (131+ Tests grün), M4-Shell (Swing) läuft bereits mit Demo-Daten, Layouts DE/EN, Design-Menü, Compose lokal.
+
+- Farbschema **Hell/Dunkel/Automatisch** in der UI verdrahten (`Theme.java` steht, Menü + Persistenz + Farb-Refactoring fehlen)
+- `ThemeTest` als JUnit-Test (Kontrast + Erkennungslogik)
+- GitHub-Actions-Build (`gradle build` als Status-Check)
+- M4-003: echte Konto-Anbindung (IMAP/POP3 via MailSyncService) statt Demo-Daten
+- M4-006/007: Attachment-UI + SMTP-Versand aus dem Composer
 
 ---
 
