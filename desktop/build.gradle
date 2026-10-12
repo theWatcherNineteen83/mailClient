@@ -1,0 +1,18 @@
+// Desktop-Shell (M4): Swing, hängt nur an core + storage (Constitution: UI-freie Core-Module).
+plugins {
+    id 'application'
+}
+
+dependencies {
+    implementation project(':core')
+    implementation project(':storage')
+    runtimeOnly 'org.xerial:sqlite-jdbc:3.46.1.3'
+
+    testImplementation platform('org.junit:junit-bom:5.10.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+application {
+    mainClass = 'de.metis.mail.desktop.MailDesktopApp'
+}

@@ -209,6 +209,19 @@ public class MailStore implements AutoCloseable {
         throw new SQLException("Folder not found after create: " + name);
     }
 
+    /** All folders of one account as name -> folderId (INSERT order). */
+    public java.util.Map<String, Long> foldersOf(long accountId) throws SQLException {
+        java.util.Map<String, Long> out = new java.util.LinkedHashMap<>();
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT id, name FROM folders WHERE account_id=? ORDER BY id")) {
+            ps.setLong(1, accountId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) out.put(rs.getString(2), rs.getLong(1));
+            }
+        }
+        return out;
+    }
+
     // ---------- message upsert (sync target) ----------
 
     /**
