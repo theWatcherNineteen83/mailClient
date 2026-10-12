@@ -1,0 +1,12 @@
+// Protocol module (M1): IMAP/SMTP via Jakarta Mail (Angus Mail implementation).
+dependencies {
+    implementation project(':core')
+    implementation 'jakarta.mail:jakarta.mail-api:2.1.3'
+    implementation 'org.eclipse.angus:angus-mail:2.0.3'
+
+    testImplementation platform('org.junit:junit-bom:5.10.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    // Embedded IMAP/SMTP server for integration tests (M1-004)
+    testImplementation 'com.icegreen:greenmail-junit5:2.0.1'
+}

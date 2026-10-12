@@ -22,10 +22,10 @@
 
 | Task | Description | Status | Owner |
 |---|---|---|---|
-| M1-001 | Implement IMAP protocol support via Jakarta Mail | ⏳ PENDING | Prometheus |
-| M1-002 | Implement SMTP protocol support via Jakarta Mail | ⏳ PENDING | Prometheus |
-| M1-003 | Implement basic authentication (username/password) | ⏳ PENDING | Prometheus |
-| M1-004 | Test against real IMAP/SMTP servers | ⏳ PENDING | Prometheus |
+| M1-001 | Implement IMAP protocol support via Jakarta Mail | ✅ DONE | Prometheus (12.10., `protocol`-Modul) |
+| M1-002 | Implement SMTP protocol support via Jakarta Mail | ✅ DONE | Prometheus (12.10., `protocol`-Modul) |
+| M1-003 | Implement basic authentication (username/password) | ✅ DONE | Prometheus (12.10., MailClientConfig) |
+| M1-004 | Test against real IMAP/SMTP servers | ✅ DONE | Prometheus (12.10., GreenMail-Integrationstests: 4/4 grün, inkl. Round-Trip + Wrong-Password) |
 
 ### Phase 3: Security & Spam (M2)
 
@@ -80,6 +80,6 @@
 
 ## Next Actions
 
-1. M1-001: IMAP-Implementierung via Jakarta Mail starten
-2. M1-002/M1-003: SMTP + Basic Auth
-3. M2-004: Security-Tests gegen bekannte Angriffe (inkl. ClamdClient-Livetest)
+1. M2-004: Security-Tests gegen bekannte Angriffe (inkl. ClamdClient-Livetest gegen echten clamd)
+2. M3-001: SQLite-Schema
+3. Optional: IMAP/SMTP-Livetest gegen Strato-Postfach (Credentials vorhanden, nur mit Georgs OK)
