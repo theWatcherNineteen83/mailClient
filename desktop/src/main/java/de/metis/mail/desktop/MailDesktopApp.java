@@ -58,15 +58,21 @@ public final class MailDesktopApp {
                 Timer t = new Timer(1600, e -> {
                     frame.selectFirstMessage();
                     Timer t2 = new Timer(1400, e2 -> {
-                        try {
-                            Robot r = new Robot();
-                            BufferedImage img = r.createScreenCapture(
-                                    new Rectangle(0, 0, 1280, 800));
-                            javax.imageio.ImageIO.write(img, "png", new File(shot));
-                        } catch (Exception ex) {
-                            ex.printStackTrace();
+                        String compose = System.getProperty("mailclient.compose");
+                        if (compose == null) {
+                            grab(frame, shot);
+                            System.exit(0);
                         }
-                        System.exit(0);
+                        // Timer für den Dialog-Schuss VOR dem modalen Öffnen starten
+                        // (modale Dialoge blockieren den aufrufenden Code, Timer laufen auf der EDT weiter).
+                        Timer t3 = new Timer(3000, e3 -> {
+                            grab(frame, shot.replace(".png", "_" + compose + ".png"));
+                            System.exit(0);
+                        });
+                        t3.setRepeats(false);
+                        t3.start();
+                        grab(frame, shot);
+                        frame.triggerCompose(compose);
                     });
                     t2.setRepeats(false);
                     t2.start();
@@ -75,5 +81,15 @@ public final class MailDesktopApp {
                 t.start();
             }
         });
+    }
+
+    private static void grab(MailFrame frame, String path) {
+        try {
+            Robot r = new Robot();
+            BufferedImage img = r.createScreenCapture(new Rectangle(0, 0, 1280, 800));
+            javax.imageio.ImageIO.write(img, "png", new File(path));
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
     }
 }

@@ -33,8 +33,8 @@ public final class MailFrame extends JFrame {
     private final MessageTableModel tableModel = new MessageTableModel();
     private final JTable messageTable = new JTable(tableModel);
     private final JEditorPane reader = new JEditorPane();
-    private final JTextField searchField = new JTextField();
-    private final JTextField quickFilter = new JTextField();
+    private final JTextField searchField = new PlaceholderTextField("search.placeholder");
+    private final JTextField quickFilter = new PlaceholderTextField("filter.quick");
     private final JLabel accountHeader = new JLabel();
     private final JLabel statusLeft = new JLabel();
     private final JLabel statusRight = new JLabel();
@@ -57,8 +57,10 @@ public final class MailFrame extends JFrame {
         this.layout = preset;
         this.groupedThreads = "true".equals(settings.get("group.threads", "false"));
         this.lookKey = System.getProperty("mailclient.laf", settings.get("ui.laf", "auto"));
+        if (!LookFeel.isAvailable(this.lookKey)) this.lookKey = "auto";
 
-        setTitle("MailClient — M4-Shell");
+        setTitle("MailClient");
+        setIconImages(loadAppIcons());
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         setSize(1200, 760);
         setLocationRelativeTo(null);
@@ -92,6 +94,20 @@ public final class MailFrame extends JFrame {
         }
         applyLayout();
         updateStatus();
+    }
+
+    /** Sumone-Logo (Ressource icons/app_<n>.png) in allen Fenstergößen. */
+    private static java.util.List<Image> loadAppIcons() {
+        java.util.List<Image> out = new java.util.ArrayList<>();
+        for (int size : new int[]{16, 24, 32, 48, 128, 256}) {
+            try (java.io.InputStream in = MailFrame.class.getResourceAsStream("/icons/app_" + size + ".png")) {
+                if (in != null) {
+                    java.awt.image.BufferedImage img = javax.imageio.ImageIO.read(in);
+                    if (img != null) out.add(img);
+                }
+            } catch (Exception ignored) { }
+        }
+        return out;
     }
 
     /** Setzt Sprache neu und baut Menü/Labels/Inhalte frisch auf. */
@@ -129,18 +145,25 @@ public final class MailFrame extends JFrame {
         toolBar.setFloatable(false);
         toolBar.removeAll();
         JButton newBtn = new JButton(I18n.tr("toolbar.new"));
+        JButton replyBtn = new JButton(I18n.tr("toolbar.reply"));
+        JButton fwdBtn = new JButton(I18n.tr("toolbar.forward"));
         JButton readBtn = new JButton(I18n.tr("toolbar.read"));
         JButton delBtn = new JButton(I18n.tr("toolbar.delete"));
-        newBtn.addActionListener(e -> showInfo(I18n.tr("menu.file.new")));
+        newBtn.addActionListener(e -> openCompose());
+        replyBtn.addActionListener(e -> replyToSelected());
+        fwdBtn.addActionListener(e -> forwardSelected());
         readBtn.addActionListener(e -> markSelectedRead());
-        delBtn.addActionListener(e -> showInfo(I18n.tr("menu.edit.delete")));
-        toolBar.add(newBtn);
-        toolBar.add(readBtn);
-        toolBar.add(delBtn);
+        delBtn.addActionListener(e -> deleteSelected());
+        for (JButton b : new JButton[]{newBtn, replyBtn, fwdBtn, readBtn, delBtn}) {
+            b.setFocusable(false);
+            toolBar.add(b);
+        }
         toolBar.add(Box.createHorizontalGlue());
         if (layout == LayoutPreset.OUTLOOK || layout == LayoutPreset.GMAIL) {
             searchField.setPreferredSize(new Dimension(280, 28));
-            searchField.setBorder(BorderFactory.createTitledBorder(I18n.tr("col.subject") + "/…"));
+            searchField.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(new Color(0xC8D2DC)),
+                    BorderFactory.createEmptyBorder(2, 4, 2, 4)));
             toolBar.add(searchField);
         }
         toolBar.revalidate();
@@ -151,14 +174,17 @@ public final class MailFrame extends JFrame {
         setJMenuBar(mb);
 
         JMenu file = mb.add(new JMenu(I18n.tr("menu.file")));
-        file.add(item(I18n.tr("menu.file.new"), () -> showInfo(I18n.tr("menu.file.new"))));
+        file.add(item(I18n.tr("menu.file.new"), this::openCompose));
         file.add(item(I18n.tr("menu.file.sync"), () -> showInfo(I18n.tr("menu.file.sync"))));
         file.addSeparator();
         file.add(item(I18n.tr("menu.file.quit"), this::dispose));
 
         JMenu edit = mb.add(new JMenu(I18n.tr("menu.edit")));
+        edit.add(item(I18n.tr("menu.edit.reply"), this::replyToSelected));
+        edit.add(item(I18n.tr("menu.edit.forward"), this::forwardSelected));
+        edit.addSeparator();
         edit.add(item(I18n.tr("menu.edit.read"), this::markSelectedRead));
-        edit.add(item(I18n.tr("menu.edit.delete"), () -> showInfo(I18n.tr("menu.edit.delete"))));
+        edit.add(item(I18n.tr("menu.edit.delete"), this::deleteSelected));
 
         JMenu view = mb.add(new JMenu(I18n.tr("menu.view")));
         JMenu layouts = new JMenu(I18n.tr("menu.view.layout"));
@@ -183,7 +209,8 @@ public final class MailFrame extends JFrame {
         JMenu looks = new JMenu(I18n.tr("menu.view.look"));
         view.add(looks);
         ButtonGroup lookGroup = new ButtonGroup();
-        for (String key : new String[]{"auto", "gtk", "nimbus", "metal"}) {
+        for (String key : new String[]{"auto", "gtk", "windows", "nimbus", "metal"}) {
+            if (!LookFeel.isAvailable(key)) continue;
             JRadioButtonMenuItem m = new JRadioButtonMenuItem(I18n.tr("look." + key), key.equals(lookKey));
             m.addActionListener(e -> switchLookFeel(key));
             lookGroup.add(m);
@@ -241,6 +268,9 @@ public final class MailFrame extends JFrame {
         messageTable.setSelectionBackground(HEADER_GRAY);
         messageTable.setSelectionForeground(new Color(0x1F2A36));
         messageTable.getTableHeader().setBackground(HEADER_GRAY);
+        messageTable.getColumnModel().getColumn(4).setCellRenderer(new SpamPercentRenderer());
+        messageTable.getColumnModel().getColumn(4).setPreferredWidth(64);
+        messageTable.getTableHeader().setToolTipText(I18n.tr("col.spam.tip"));
         tableModel.setShowPreview(previewMode);
 
         JPanel rightCol = new JPanel(new BorderLayout());
@@ -447,6 +477,93 @@ public final class MailFrame extends JFrame {
         } catch (SQLException ignored) { }
     }
 
+    // ---------- Aktionen: Compose, Antwort, Weiterleitung, Löschen ----------
+
+    private StoredMessage selectedMessage() {
+        int v = messageTable.getSelectedRow();
+        return v < 0 ? null : tableModel.rowAt(messageTable.convertRowIndexToModel(v));
+    }
+
+    private long sentFolderId() {
+        Long id = folders.get(I18n.tr("folder.sent"));
+        return id == null ? 0L : id;
+    }
+
+    private void openCompose() {
+        ComposeDialog.openNew(this, store, sentFolderId(), this::reloadMessages);
+    }
+
+    private void replyToSelected() {
+        withBodyOfSelected((m, body) ->
+                ComposeDialog.openReply(this, store, sentFolderId(), m, body, this::reloadMessages));
+    }
+
+    private void forwardSelected() {
+        withBodyOfSelected((m, body) ->
+                ComposeDialog.openForward(this, store, sentFolderId(), m, body, this::reloadMessages));
+    }
+
+    /** Textkörper async laden (kein DB-IO auf der EDT), dann Dialog öffnen. */
+    private void withBodyOfSelected(java.util.function.BiConsumer<StoredMessage, String> action) {
+        StoredMessage m = selectedMessage();
+        if (m == null) {
+            statusRight.setText(I18n.tr("status.noselection"));
+            return;
+        }
+        new SwingWorker<String, Void>() {
+            @Override protected String doInBackground() throws Exception {
+                String[] b = store.getBodies(m.id());
+                if (b == null) return null;
+                return b[0] != null && !b[0].isBlank() ? b[0] : b[1];
+            }
+            @Override protected void done() {
+                try { action.accept(m, get()); }
+                catch (Exception ignored) { action.accept(m, null); }
+            }
+        }.execute();
+    }
+
+    private void deleteSelected() {
+        StoredMessage m = selectedMessage();
+        if (m == null) {
+            statusRight.setText(I18n.tr("status.noselection"));
+            return;
+        }
+        new SwingWorker<Void, Void>() {
+            @Override protected Void doInBackground() throws Exception {
+                store.setDeleted(m.id(), true);
+                return null;
+            }
+            @Override protected void done() {
+                try { get(); }
+                catch (Exception e) {
+                    JOptionPane.showMessageDialog(MailFrame.this,
+                            e.getMessage(), I18n.tr("toolbar.delete"), JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
+                statusLeft.setText(I18n.tr("status.deleted", m.subject()));
+                reloadMessages();
+            }
+        }.execute();
+    }
+
+    /** Spam-Spalte als Prozentanzeige mit Ampelfarben (spec: 0–100, >60 Spam, <30 sauber). */
+    private static final class SpamPercentRenderer extends javax.swing.table.DefaultTableCellRenderer {
+        SpamPercentRenderer() { setHorizontalAlignment(SwingConstants.CENTER); }
+        @Override public Component getTableCellRendererComponent(JTable table, Object value,
+                boolean isSelected, boolean hasFocus, int row, int column) {
+            super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+            int score = value instanceof Integer i ? i : 0;
+            setText(score + " %");
+            if (!isSelected) {
+                setForeground(score > 60 ? new Color(0xC0392B)
+                        : score >= 30 ? new Color(0xB4650A) : new Color(0x2E7D32));
+            }
+            setToolTipText(I18n.tr("col.spam.tip"));
+            return this;
+        }
+    }
+
     private List<StoredMessage> visibleRows() {
         List<StoredMessage> out = new ArrayList<>();
         for (int i = 0; i < messageTable.getRowCount(); i++) {
@@ -484,6 +601,15 @@ public final class MailFrame extends JFrame {
         if (messageTable.getRowCount() > 0) {
             messageTable.setRowSelectionInterval(0, 0);
             messageTable.requestFocusInWindow();
+        }
+    }
+
+    /** Für Screenshot-Läufe: Compose-Aktionen auslösbar machen. */
+    public void triggerCompose(String mode) {
+        switch (mode) {
+            case "reply" -> replyToSelected();
+            case "forward" -> forwardSelected();
+            default -> openCompose();
         }
     }
 
