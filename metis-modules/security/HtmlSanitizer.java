@@ -8,32 +8,49 @@ import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * Utility class to sanitize HTML content for safe inclusion in emails.
  * Removes script tags, event handlers, and unsafe URL protocols while preserving a
  * whitelist of allowed formatting tags.
+ *
+ * Strategy: tag-by-tag rewriting. Disallowed tags are stripped (content kept),
+ * allowed tags are kept but their attributes are filtered: only safe attributes
+ * (href, src, alt, title, width, height) survive, and only with safe URL schemes.
  */
 public class HtmlSanitizer {
 
     private static final Logger LOG = Logger.getLogger(HtmlSanitizer.class.getName());
 
     private static final Set<String> ALLOWED_TAGS = Set.of(
-            "p", "div", "span", "a", "img", "table", "tr", "td", "th", "ul", "ol", "li", "b", "i", "br"
+            "p", "div", "span", "a", "img", "table", "tr", "td", "th",
+            "ul", "ol", "li", "b", "i", "u", "em", "strong", "br", "hr"
     );
 
-    // Pattern to match opening, self-closing, or closing tags
-    private static final Pattern TAG_PATTERN = Pattern.compile("<\\s*([a-zA-Z][a-zA-Z0-9-]*)[^>]*>", Pattern.CASE_INSENSITIVE);
-    
-    // Pattern to match HTML entities like &amp; &lt;
-    private static final Pattern HTML_ENTITY_PATTERN = Pattern.compile("&[a-zA-Z0-9#]+;");
+    private static final Set<String> ALLOWED_ATTRS = Set.of(
+            "href", "src", "alt", "title", "width", "height"
+    );
 
-    private static final String JS_PROTOCOL = "javascript:";
-    private static final String DATA_PROTOCOL = "data:";
+    /** Matches an HTML tag (opening, closing, self-closing). */
+    private static final Pattern TAG_PATTERN =
+            Pattern.compile("<\\s*(/?)\\s*([a-zA-Z][a-zA-Z0-9-]*)((?:[^>\"']|\"[^\"]*\"|'[^']*')*)>");
+
+    /** Matches one attribute: name plus optional value (quoted or bare). */
+    private static final Pattern ATTR_PATTERN =
+            Pattern.compile("([a-zA-Z_:][-a-zA-Z0-9_:.]*)\\s*(?:=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s>]+)))?");
+
+    /** Matches script/style blocks including content. */
+    private static final Pattern BLOCK_PATTERN =
+            Pattern.compile("<\\s*(script|style)\\b[^>]*>.*?<\\s*/\\s*\\1\\s*>",
+                    Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+
+    /** Matches HTML comments. */
+    private static final Pattern COMMENT_PATTERN = Pattern.compile("<!--.*?-->", Pattern.DOTALL);
+
+    private static final Set<String> SAFE_URL_SCHEMES = Set.of("http", "https", "mailto", "cid", "ftp");
 
     /**
-     * Sanitizes the provided HTML content.
+     * Sanitizes the provided HTML content. Never throws on malformed input.
      *
      * @param html The raw HTML string to sanitize.
      * @return The sanitized HTML string.
@@ -43,62 +60,99 @@ public class HtmlSanitizer {
             return "";
         }
 
-        LOG.fine("Starting HTML sanitization");
         List<String> removedItems = new ArrayList<>();
+        String work = html;
 
-        // 1. Decode HTML entities to ensure we catch script tags hidden as &lt;script&gt;
-        // We use a simple iterative decoding to avoid loops if the input is malicious.
-        html = HTML_ENTITY_PATTERN.matcher(html).replaceAll("");
+        // 0. Strip comments (can hide conditional script tricks)
+        work = COMMENT_PATTERN.matcher(work).replaceAll("");
 
-        // 2. Remove script tags and their content
-        Pattern scriptPattern = Pattern.compile("<script[^>]*>.*?</script>", Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
-        html = scriptPattern.matcher(html).replaceAll("");
-        removedItems.add("script tags");
+        // 1. Remove script/style blocks including their content
+        Matcher block = BLOCK_PATTERN.matcher(work);
+        if (block.find()) {
+            removedItems.add("script/style blocks");
+            work = block.reset().replaceAll("");
+        }
 
-        // 3. Remove event handlers (on* attributes)
-        Pattern onAttrPattern = Pattern.compile("\\s+on[a-z]+=\"[^\"]*\"", Pattern.CASE_INSENSITIVE);
-        html = onAttrPattern.matcher(html).replaceAll("");
-        removedItems.add("event handlers");
+        // 2. Rewrite remaining tags: drop disallowed tags, filter attributes
+        String result = rewrite(work, removedItems);
 
-        // 4. Remove unsafe URL protocols
-        html = html.replaceAll(JS_PROTOCOL + "[^\"'>\\s]*", "");
-        html = html.replaceAll(DATA_PROTOCOL + "[^\"'>\\s]*", "");
-        removedItems.add("javascript: and data: URLs");
+        LOG.info("Sanitization complete. Removed: "
+                + removedItems.stream().distinct().collect(Collectors.joining(", ")));
+        return result;
+    }
 
-        // 5. Remove disallowed tags
-        Matcher m = TAG_PATTERN.matcher(html);
+    /** Single-pass tag rewriting with proper tail handling. */
+    private String rewrite(String work, List<String> removedItems) {
+        Matcher m = TAG_PATTERN.matcher(work);
         StringBuilder sb = new StringBuilder();
+        int last = 0;
         while (m.find()) {
-            String fullTag = m.group();
-            // Extract tag name
-            String tagContent = fullTag.substring(1, fullTag.indexOf(">")).trim();
-            String tagName = tagContent.split("[\\s/>]")[0].toLowerCase(Locale.ROOT);
-            
-            if (ALLOWED_TAGS.contains(tagName)) {
-                // Keep the tag
-                sb.append(fullTag);
+            sb.append(work, last, m.start());
+            last = m.end();
+
+            boolean closing = "/".equals(m.group(1));
+            String tagName = m.group(2).toLowerCase(Locale.ROOT);
+            String rawAttrs = m.group(3) == null ? "" : m.group(3);
+            boolean selfClosing = m.group().endsWith("/>");
+
+            if (!ALLOWED_TAGS.contains(tagName)) {
+                removedItems.add("tag:" + tagName);
+                continue; // drop tag, keep surrounding text
+            }
+            if (closing) {
+                sb.append("</").append(tagName).append('>');
             } else {
-                // Remove tag but keep content
-                if (tagContent.contains("/")) {
-                    // Self-closing or closing tag - remove entirely
-                } else {
-                    // Opening tag - replace with just content
-                    sb.append("");
-                }
-                removedItems.add("disallowed tag: " + tagName);
+                sb.append('<').append(tagName).append(filterAttributes(rawAttrs, removedItems));
+                sb.append(selfClosing ? "/>" : ">");
             }
         }
-        sb.append(m.replaceAll(""));
-
-        LOG.info("Sanitization complete. Removed: " + removedItems.stream().distinct().collect(Collectors.joining(", ")));
+        sb.append(work.substring(last));
         return sb.toString();
     }
 
-    /**
-     * Simple HTML entity encoder for output.
-     */
-    private String escapeQuotes(String s) {
+    /** Keeps only whitelisted attributes with safe values. */
+    private String filterAttributes(String rawAttrs, List<String> removedItems) {
+        if (rawAttrs == null || rawAttrs.isBlank()) {
+            return "";
+        }
+        Matcher a = ATTR_PATTERN.matcher(rawAttrs);
+        StringBuilder out = new StringBuilder();
+        while (a.find()) {
+            String name = a.group(1).toLowerCase(Locale.ROOT);
+            String value = a.group(2) != null ? a.group(2)
+                    : (a.group(3) != null ? a.group(3) : (a.group(4) != null ? a.group(4) : ""));
+
+            if (!ALLOWED_ATTRS.contains(name)) {
+                removedItems.add("attr:" + name);
+                continue; // drops all on* handlers, style, etc.
+            }
+            if (("href".equals(name) || "src".equals(name)) && !isSafeUrl(value)) {
+                removedItems.add("unsafe-url:" + value);
+                continue;
+            }
+            out.append(' ').append(name).append("=\"").append(escape(value)).append('"');
+        }
+        return out.toString();
+    }
+
+    private boolean isSafeUrl(String url) {
+        if (url == null) return false;
+        String u = url.strip().toLowerCase(Locale.ROOT)
+                .replaceAll("[\\u0000-\\u0020]", ""); // strip control chars/whitespace tricks
+        if (u.startsWith("/") || u.startsWith("#") || u.startsWith("?")) {
+            return true; // relative
+        }
+        int colon = u.indexOf(':');
+        if (colon < 0) {
+            return true; // no scheme => relative
+        }
+        String scheme = u.substring(0, colon);
+        return SAFE_URL_SCHEMES.contains(scheme);
+    }
+
+    private String escape(String s) {
         if (s == null) return "";
-        return s.replace("\"", "&quot;");
+        return s.replace("&", "&amp;").replace("<", "&lt;")
+                .replace(">", "&gt;").replace("\"", "&quot;");
     }
 }

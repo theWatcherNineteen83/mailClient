@@ -30,18 +30,16 @@ public class MboxSplitter {
             String line;
             while ((line = reader.readLine()) != null) {
                 if (line.startsWith(MBOX_DELIMITER)) {
-                    // Previous message ended, start new one
                     if (current.length() > 0) {
-                        // Trim trailing blank lines from previous message
+                        // Trim trailing whitespace from previous message
                         while (current.length() > 0 && Character.isWhitespace(current.charAt(current.length() - 1))) {
                             current.setLength(current.length() - 1);
                         }
                         messages.add(current.toString());
                         current = new StringBuilder();
                     }
-                    // This >From line is the start of a new message envelope
                     // Convert >From to From
-                    current.append(line.substring(MBOX_DELIMITER.length()));
+                    current.append("From ").append(line.substring(MBOX_DELIMITER.length())).append("\n");
                 } else {
                     current.append(line).append("\n");
                 }
@@ -79,7 +77,7 @@ public class MboxSplitter {
                     messages.add(current.toString());
                     current = new StringBuilder();
                 }
-                current.append(line.substring(MBOX_DELIMITER.length()));
+                current.append("From ").append(line.substring(MBOX_DELIMITER.length())).append("\n");
             } else {
                 current.append(line).append("\n");
             }

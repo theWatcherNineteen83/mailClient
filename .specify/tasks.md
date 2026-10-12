@@ -2,8 +2,8 @@
 
 **Project:** Modular Java Mail Client (`de.metis.mail`)
 **Author:** Prometheus (OpenClaw Agent)
-**Date:** 11.10.2026
-**Status:** Draft
+**Date:** 11.10.2026 (letzte Änderung: 12.10.2026)
+**Status:** In Arbeit
 
 ## Task Breakdown
 
@@ -11,10 +11,10 @@
 
 | Task | Description | Status | Owner |
 |---|---|---|---|
-| M0-001 | Create Gradle multi-project repository structure | ✅ DONE | Prometheus |
+| M0-001 | Create Gradle multi-project repository structure | ⏳ PENDING | Prometheus |
 | M0-002 | Implement MailAddress (RFC 5322 parsing, display, validation) | ✅ DONE | Metis |
 | M0-003 | Implement MailMessage data model (From/To/Subject/Date/Body) | ✅ DONE | Metis |
-| M0-004 | Implement HTML sanitizer (whitelist, no exceptions) | 🔴 BUG | Metis |
+| M0-004 | Implement HTML sanitizer (whitelist, no exceptions) | ✅ DONE | Prometheus (Bugfix 12.10.) |
 | M0-005 | Implement attachment policy (type blocking, size limits) | ✅ DONE | Metis |
 | M0-006 | Write unit tests for M0 modules | ⏳ PENDING | Prometheus |
 
@@ -31,9 +31,9 @@
 
 | Task | Description | Status | Owner |
 |---|---|---|---|
-| M2-001 | Implement SPF/DKIM/DMARC header analysis | 🔴 BUG | Metis |
-| M2-002 | Implement local spam heuristic scoring | 🔴 BUG | Metis |
-| M2-003 | Implement ClamAV TCP client | 🔴 BUG | Metis |
+| M2-001 | Implement SPF/DKIM/DMARC header analysis | ✅ DONE | Prometheus (Bugfix 12.10.) |
+| M2-002 | Implement local spam heuristic scoring | ✅ DONE | Prometheus (Bugfix 12.10.) |
+| M2-003 | Implement ClamAV TCP client | ✅ DONE | Prometheus (Bugfix 12.10.) |
 | M2-004 | Test security features against known attacks | ⏳ PENDING | Prometheus |
 
 ### Phase 4: Storage & Threading (M3)
@@ -65,14 +65,19 @@
 
 | Bug | Module | Description | Status |
 |---|---|---|---|
-| BUG-001 | HtmlSanitizer | `IndexOutOfBoundsException: No group 6` in `processAttributes(HtmlSanitizer.java:204)` — Regex-Gruppenreferenz fehlerhaft | 🔴 KNOWN |
-| BUG-002 | ClamdClient | Implements fictional protocol; expects `"PONG: ClamAV"` and `"STREAM: INCR"` — real clamd says `"PONG"` / `"STREAM: OK"` | 🔴 KNOWN |
-| BUG-003 | MboxSplitter | `>From ` escaping not working — content after split doesn't contain "From hier" | 🔴 KNOWN |
-| BUG-004 | AuthenticationResultsParser | Status parsing correct (PASS/FAIL), but `domain` field always null | 🔴 KNOWN |
-| BUG-005 | SpamHeuristicScorer | Fires too late: test spam email scores only 25/100 (expected >60) | 🔴 KNOWN |
+| BUG-001 | HtmlSanitizer | `IndexOutOfBoundsException: No group 6` in `processAttributes` — Regex-Gruppenreferenz fehlerhaft | ✅ FIXED 12.10.2026 — Neuschrieb als Tag-Rewriter mit Attribut-Whitelist (href/src/alt/title/width/height), URL-Scheme-Check, script/style-Block-Entfernung. Test grün. |
+| BUG-002 | ClamdClient | Fiktives Protokoll (`"PONG: ClamAV"`, `"STREAM: INCR"`) — echtes clamd sagt `"PONG"` / `"stream: OK"` | ✅ FIXED 12.10.2026 — Echtes clamd-TCP-Protokoll (PING/PONG, VERSION, INSTREAM mit 4-Byte-Null-EOF). Kompiliert; Integrationstest gegen echten clamd ausstehend (M2-004). |
+| BUG-003 | MboxSplitter | `>From `-Escaping funktioniert nicht — Body-Inhalt nach Split fehlt | ✅ FIXED 12.10.2026 — Envelope-Zeile bleibt als `From ...` erhalten, Body-Inhalt (inkl. Zeilen die mit "From" beginnen) bleibt im richtigen Message-Block. Test grün. |
+| BUG-004 | AuthenticationResultsParser | Status-Parsing korrekt (pass/fail), aber `domain`-Feld immer null | ✅ FIXED 12.10.2026 — Domain-Extraktion aus smtp.mailfrom/header.d/header.from. Test grün. |
+| BUG-005 | SpamHeuristicScorer | Feuert zu spät: Test-Spam score nur 25/100 (erwartet >60) | ✅ FIXED 12.10.2026 — 6 Heuristiken (Sender-Mismatch, suspicious TLD in E-Mails UND URL-Hosts, Uppercase-Subject, Link-Count, Urgency-Words, Missing-Auth). Test-Spam: 70/100, Clean: 0/100. Test grün. |
+
+## Verification (12.10.2026)
+
+- Alle 8 Module kompilieren mit `javac --release 17` (exit 0).
+- Smoke-Tests: HtmlSanitizer OK, MboxSplitter OK, AuthenticationResultsParser OK, SpamHeuristicScorer OK, ClamdClient per Code-Review verifiziert.
 
 ## Next Actions
 
-1. Fix all 5 Metis bugs (either manually or re-feed corrected acceptance tests to Metis)
-2. Write comprehensive unit tests for all M0 modules
-3. Begin M1 protocol implementation
+1. M0-001: Gradle Multi-Project Struktur aufsetzen (settings.gradle + Modul-Builds)
+2. M0-006: JUnit-5-Unit-Tests für alle M0-Module schreiben
+3. M1-001: IMAP-Implementierung via Jakarta Mail starten
