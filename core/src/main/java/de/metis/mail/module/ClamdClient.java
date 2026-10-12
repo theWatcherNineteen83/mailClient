@@ -58,21 +58,26 @@ public class ClamdClient implements AutoCloseable {
 
     /**
      * Stream file content for virus scanning via INSTREAM.
-     * Real protocol: Send INSTREAM\n, then stream bytes, then send
-     * 4 bytes of length=0 to signal EOF.
+     * Real clamd protocol: send "INSTREAM\n", then data in chunks of
+     * [4-byte big-endian length][payload], terminated by a zero-length chunk.
+     * Response: "stream: OK" or "stream: <Signature> FOUND".
      */
     public String streamScan(InputStream fileData) throws IOException {
         sendCommand(COMMAND_INSTREAM);
-        
-        // Stream the file content
+
+        // Stream the file content in length-prefixed chunks
         byte[] buffer = new byte[4096];
         int bytesRead;
         while ((bytesRead = fileData.read(buffer)) != -1) {
+            writer.write(new byte[]{
+                    (byte) (bytesRead >> 24),
+                    (byte) (bytesRead >> 16),
+                    (byte) (bytesRead >> 8),
+                    (byte) bytesRead});
             writer.write(buffer, 0, bytesRead);
         }
-        writer.flush();
 
-        // Signal EOF with 4 bytes of length 0
+        // Zero-length chunk signals EOF
         writer.write(new byte[]{0, 0, 0, 0});
         writer.flush();
 

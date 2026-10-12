@@ -2,15 +2,28 @@ package de.metis.mail.security;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.logging.Logger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
- * Parser for Authentication-Results headers.
- * Extracts SPF, DKIM, and DMARC verification results.
+ * Parser for Authentication-Results headers (RFC 8601).
+ * Extracts SPF, DKIM, and DMARC verification results including status and domain.
+ *
+ * <p>Example header value:
+ * {@code mx.example.com; spf=pass smtp.mailfrom=example.com; dkim=pass header.d=example.com; dmarc=pass}
  */
 public class AuthenticationResultsParser {
 
     private static final Logger LOG = Logger.getLogger(AuthenticationResultsParser.class.getName());
+
+    /** Matches a method=result pair such as "spf=pass", "dkim=none", "dmarc=softfail". */
+    private static final Pattern RESULT_PATTERN =
+            Pattern.compile("\\b(spf|dkim|dmarc|dkim-atps)\\s*=\\s*([a-z]+)", Pattern.CASE_INSENSITIVE);
+
+    /** Domain extraction keys in priority order. */
+    private static final String[] DOMAIN_KEYS = {"smtp.mailfrom=", "header.d=", "header.from=", "smtp.helo="};
 
     /**
      * Authentication result for a single protocol.
@@ -36,17 +49,17 @@ public class AuthenticationResultsParser {
      * Parse an Authentication-Results header value.
      *
      * @param headerValue The raw header value
-     * @return List of AuthResult objects
+     * @return List of AuthResult objects (empty for null/blank/unparsable input)
      */
     public List<AuthResult> parse(String headerValue) {
         List<AuthResult> results = new ArrayList<>();
-        if (headerValue == null || headerValue.isEmpty()) {
+        if (headerValue == null || headerValue.isBlank()) {
             return results;
         }
 
         LOG.fine("Parsing Authentication-Results: " + headerValue);
 
-        // Split on semicolons to get individual authentication results
+        // Split on semicolons to get individual authentication result clauses
         String[] parts = headerValue.split(";");
         for (String part : parts) {
             part = part.trim();
@@ -66,66 +79,30 @@ public class AuthenticationResultsParser {
     }
 
     private AuthResult parsePart(String part) {
-        // Format: smtp.mailfrom=example.com (spf)
-        // Format: header.d=example.com (dkim)
-        // Format: header.from=example.com (dmarc)
-        
-        // Extract protocol and domain
-        String protocol = null;
-        String domain = null;
-        String status = null;
-
-        // Look for "smtp.mailfrom=" (SPF)
-        if (part.contains("smtp.mailfrom=")) {
-            protocol = "spf";
-            int idx = part.indexOf("smtp.mailfrom=");
-            int end = part.indexOf(' ', idx);
-            if (end == -1) end = part.length();
-            domain = part.substring(idx + 14, end).trim();
-            status = extractStatus(part);
+        Matcher m = RESULT_PATTERN.matcher(part);
+        if (!m.find()) {
+            return null; // no method=result pair => not an auth result clause
         }
-        // Look for "header.d=" (DKIM)
-        else if (part.contains("header.d=")) {
-            protocol = "dkim";
-            int idx = part.indexOf("header.d=");
-            int end = part.indexOf(' ', idx);
-            if (end == -1) end = part.length();
-            domain = part.substring(idx + 9, end).trim();
-            status = extractStatus(part);
-        }
-        // Look for "header.from=" (DMARC)
-        else if (part.contains("header.from=")) {
-            protocol = "dmarc";
-            int idx = part.indexOf("header.from=");
-            int end = part.indexOf(' ', idx);
-            if (end == -1) end = part.length();
-            domain = part.substring(idx + 12, end).trim();
-            status = extractStatus(part);
-        }
-
-        if (protocol != null) {
-            return new AuthResult(protocol, status, domain);
-        }
-
-        return null;
+        String protocol = m.group(1).toLowerCase(Locale.ROOT);
+        String status = m.group(2).toLowerCase(Locale.ROOT);
+        String domain = extractDomain(part);
+        return new AuthResult(protocol, status, domain);
     }
 
-    private String extractStatus(String part) {
-        // Look for status=... 
-        if (part.contains("status=")) {
-            int idx = part.indexOf("status=");
-            int end = part.indexOf(' ', idx);
-            if (end == -1) end = part.length();
-            return part.substring(idx + 7, end).trim();
+    private String extractDomain(String part) {
+        for (String key : DOMAIN_KEYS) {
+            int idx = part.indexOf(key);
+            if (idx < 0) continue;
+            int start = idx + key.length();
+            int end = start;
+            while (end < part.length() && !Character.isWhitespace(part.charAt(end))
+                    && part.charAt(end) != ';' && part.charAt(end) != ')') {
+                end++;
+            }
+            if (end > start) {
+                return part.substring(start, end).trim();
+            }
         }
-        // Look for pass/fail/softfail
-        if (part.contains("pass")) return "pass";
-        if (part.contains("fail")) return "fail";
-        if (part.contains("softfail")) return "softfail";
-        if (part.contains("neutral")) return "neutral";
-        if (part.contains("temperror")) return "temperror";
-        if (part.contains("permerror")) return "permerror";
-        
-        return "unknown";
+        return null;
     }
 }
