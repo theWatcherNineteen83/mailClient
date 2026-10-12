@@ -16,3 +16,20 @@ dependencies {
 application {
     mainClass = 'de.metis.mail.desktop.MailDesktopApp'
 }
+
+// Ein-Klick-Jar für andere Rechner (z.B. Windows 11): alle Abhängigkeiten inkl. SQLite-Native.
+tasks.register('fatJar', Jar) {
+    group = 'distribution'
+    archiveBaseName = 'MailClient'
+    archiveVersion = '0.1.0'
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    manifest { attributes 'Main-Class': 'de.metis.mail.desktop.MailDesktopApp' }
+    from sourceSets.main.output
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    } {
+        exclude 'META-INF/versions/**/module-info.class'
+        exclude 'module-info.class'
+    }
+    exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
+}
