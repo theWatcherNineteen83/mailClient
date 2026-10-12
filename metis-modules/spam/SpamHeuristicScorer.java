@@ -15,12 +15,12 @@ public class SpamHeuristicScorer {
     private static final Logger LOG = Logger.getLogger(SpamHeuristicScorer.class.getName());
 
     // Heuristic weights
-    private static final int SENDER_MISMATCH = 15;
+    private static final int SENDER_MISMATCH = 20;
     private static final int SUSPICIOUS_TLD = 10;
-    private static final int UPPERCASE_SUBJECT = 12;
-    private static final int LINK_COUNT = 8;
-    private static final int URGENCY = 10;
-    private static final int MISSING_AUTH = 15;
+    private static final int UPPERCASE_SUBJECT = 15;
+    private static final int LINK_COUNT = 10;
+    private static final int URGENCY_WORDS = 15;
+    private static final int MISSING_AUTH = 20;
 
     // Regex patterns
     private static final Pattern URL_PATTERN = Pattern.compile("http[s]?://[\\S]+", Pattern.CASE_INSENSITIVE);
@@ -56,44 +56,23 @@ public class SpamHeuristicScorer {
             }
         }
 
-        // Suspicious TLD (check both email addresses and URL hosts)
+        // Suspicious TLD
         if (body != null) {
-            boolean suspicious = false;
             Matcher m = EMAIL_PATTERN.matcher(body);
             while (m.find()) {
-                if (isSuspiciousTld(m.group(3).toLowerCase())) {
-                    suspicious = true;
-                    break;
+                String tld = m.group(3).toLowerCase();
+                if (isSuspiciousTld(tld)) {
+                    score += SUSPICIOUS_TLD;
+                    details.put("suspicious_tld", SUSPICIOUS_TLD);
+                    break; // Only count once
                 }
-            }
-            if (!suspicious) {
-                Matcher u = URL_PATTERN.matcher(body);
-                while (u.find()) {
-                    String url = u.group();
-                    // extract host: strip scheme, cut at first / or ?
-                    String host = url.replaceFirst("^https?://", "");
-                    int slash = host.indexOf('/');
-                    if (slash >= 0) host = host.substring(0, slash);
-                    int dot = host.lastIndexOf('.');
-                    if (dot >= 0 && dot < host.length() - 1) {
-                        String tld = host.substring(dot + 1).toLowerCase();
-                        if (isSuspiciousTld(tld)) {
-                            suspicious = true;
-                            break;
-                        }
-                    }
-                }
-            }
-            if (suspicious) {
-                score += SUSPICIOUS_TLD;
-                details.put("suspicious_tld", SUSPICIOUS_TLD);
             }
         }
 
         // Uppercase subject
         if (subject != null && !subject.isEmpty()) {
             double upperRatio = countUpperCase(subject) / (double) subject.length();
-            if (upperRatio > 0.7) {
+            if (upperRatio > 0.5) {
                 score += UPPERCASE_SUBJECT;
                 details.put("uppercase_subject", UPPERCASE_SUBJECT);
             }
@@ -106,7 +85,7 @@ public class SpamHeuristicScorer {
             while (m.find()) {
                 links++;
             }
-            if (links >= 5) {
+            if (links >= 3) {
                 score += LINK_COUNT;
                 details.put("link_count", LINK_COUNT);
             }
@@ -117,8 +96,8 @@ public class SpamHeuristicScorer {
             String combined = (body != null ? body : "") + " " + (subject != null ? subject : "");
             for (String word : URGENCY_WORD_LIST) {
                 if (combined.toLowerCase().contains(word)) {
-                    score += URGENCY;
-                    details.put("urgency_words", URGENCY);
+                    score += URGENCY_WORDS;
+                    details.put("urgency_words", URGENCY_WORDS);
                     break; // Only count once
                 }
             }
