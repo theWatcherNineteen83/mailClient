@@ -7,7 +7,8 @@ public enum LayoutPreset {
     DEFAULT,
     THUNDERBIRD,
     OUTLOOK,
-    GMAIL;
+    GMAIL,
+    FOXMAIL;
 
     public static LayoutPreset fromString(String s) {
         if (s == null || s.isBlank()) return DEFAULT;
@@ -25,6 +26,7 @@ public enum LayoutPreset {
             case THUNDERBIRD -> "menu.view.layout.thunderbird";
             case OUTLOOK -> "menu.view.layout.outlook";
             case GMAIL -> "menu.view.layout.gmail";
+            case FOXMAIL -> "menu.view.layout.foxmail";
         };
     }
 }

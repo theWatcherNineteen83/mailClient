@@ -19,6 +19,13 @@ public final class MessageTableModel extends AbstractTableModel {
 
     private final List<StoredMessage> rows = new ArrayList<>();
     private DateTimeFormatter fmt = formatter("de");
+    private boolean showPreview;
+
+    /** Foxmail-Modus: Betreffzelle zeigt Betreff + Textvorschau zweizeilig. */
+    public void setShowPreview(boolean on) {
+        this.showPreview = on;
+        fireTableDataChanged();
+    }
 
     public void setRows(List<StoredMessage> newRows, String lang) {
         rows.clear();
@@ -55,10 +62,23 @@ public final class MessageTableModel extends AbstractTableModel {
                 String name = m.fromName() != null && !m.fromName().isBlank() ? m.fromName() : m.fromAddr();
                 yield name == null ? "?" : name;
             }
-            case 2 -> m.subject();
+            case 2 -> showPreview ? twoLine(m) : m.subject();
             case 3 -> m.sentDate() == null ? "" : fmt.format(m.sentDate());
             default -> m.spamScore();
         };
+    }
+
+    private static String esc(String s) {
+        if (s == null) return "";
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
+    private String twoLine(StoredMessage m) {
+        String preview = m.preview() == null ? "" : m.preview();
+        if (preview.length() > 90) preview = preview.substring(0, 90) + "…";
+        String flag = m.unseen() ? " <b>●</b>" : "";
+        return "<html><body style='width:300px'><b>" + esc(m.subject()) + "</b>" + flag
+                + "<br><span style='color:#5a6a7a'>" + esc(preview) + "</span></body></html>";
     }
 
     private static DateTimeFormatter formatter(String lang) {

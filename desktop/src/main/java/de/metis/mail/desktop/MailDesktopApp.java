@@ -19,15 +19,18 @@ import java.nio.file.Path;
 public final class MailDesktopApp {
 
     public static void main(String[] args) throws Exception {
-        try {
-            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-        } catch (Exception ignored) { }
-
         Path dataDir = Path.of(System.getProperty("user.home"), "MailClient-Daten");
         Files.createDirectories(dataDir);
         String jdbc = "jdbc:sqlite:" + dataDir.resolve("mail.sqlite");
 
         UiSettings settings = new UiSettings(jdbc);
+        try {
+            LookFeel.apply(System.getProperty("mailclient.laf", settings.get("ui.laf", "auto")));
+        } catch (Exception fallback) {
+            try {
+                UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+            } catch (Exception ignored) { }
+        }
         String lang = System.getProperty("mailclient.lang", settings.get("ui.language", "de"));
         I18n.setLanguage(lang);
 

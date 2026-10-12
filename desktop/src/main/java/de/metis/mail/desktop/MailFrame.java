@@ -44,12 +44,19 @@ public final class MailFrame extends JFrame {
 
     private LayoutPreset layout;
     private boolean groupedThreads;
+    private String lookKey;
+
+    /** Design-Palette: neutrale helle Foxmail-Farben (Grau/Blau/Weiß). */
+    private static final Color BG_NEUTRAL = new Color(0xFAFBFC);
+    private static final Color ACCENT_BLUE = new Color(0x3D6EB5);
+    private static final Color HEADER_GRAY = new Color(0xEDF1F5);
 
     public MailFrame(MailStore store, UiSettings settings, LayoutPreset preset) {
         this.store = store;
         this.settings = settings;
         this.layout = preset;
         this.groupedThreads = "true".equals(settings.get("group.threads", "false"));
+        this.lookKey = System.getProperty("mailclient.laf", settings.get("ui.laf", "auto"));
 
         setTitle("MailClient — M4-Shell");
         setDefaultCloseOperation(EXIT_ON_CLOSE);
@@ -173,6 +180,15 @@ public final class MailFrame extends JFrame {
             langGroup.add(m);
             langs.add(m);
         }
+        JMenu looks = new JMenu(I18n.tr("menu.view.look"));
+        view.add(looks);
+        ButtonGroup lookGroup = new ButtonGroup();
+        for (String key : new String[]{"auto", "gtk", "nimbus", "metal"}) {
+            JRadioButtonMenuItem m = new JRadioButtonMenuItem(I18n.tr("look." + key), key.equals(lookKey));
+            m.addActionListener(e -> switchLookFeel(key));
+            lookGroup.add(m);
+            looks.add(m);
+        }
         view.addSeparator();
         JCheckBoxMenuItem thr = new JCheckBoxMenuItem(I18n.tr("menu.view.threads"), groupedThreads);
         thr.addActionListener(e -> {
@@ -214,7 +230,18 @@ public final class MailFrame extends JFrame {
         foldersScroll.setBorder(BorderFactory.createEmptyBorder());
         JScrollPane tableScroll = new JScrollPane(messageTable);
         reader.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
+        reader.setBackground(Color.WHITE);
         JScrollPane readerScroll = new JScrollPane(reader);
+        readerScroll.setBorder(BorderFactory.createLineBorder(HEADER_GRAY));
+
+        boolean previewMode = layout == LayoutPreset.FOXMAIL;
+        messageTable.setRowHeight(previewMode ? 46 : 20);
+        messageTable.setShowGrid(false);
+        messageTable.setIntercellSpacing(new Dimension(0, 0));
+        messageTable.setSelectionBackground(HEADER_GRAY);
+        messageTable.setSelectionForeground(new Color(0x1F2A36));
+        messageTable.getTableHeader().setBackground(HEADER_GRAY);
+        tableModel.setShowPreview(previewMode);
 
         JPanel rightCol = new JPanel(new BorderLayout());
 
@@ -262,6 +289,40 @@ public final class MailFrame extends JFrame {
                 listWrap.add(tableScroll, BorderLayout.CENTER);
                 JSplitPane outer = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, foldersScroll, listWrap);
                 outer.setResizeWeight(0.15);
+                lastSplitB = outer;
+                centerPanel.add(outer, BorderLayout.CENTER);
+            }
+            case FOXMAIL -> {
+                // Foxmail-Vorbild: drei Spalten — Konto/Ordner | Liste mit Textvorschau | Lesebereich rechts
+                foldersScroll.setPreferredSize(new Dimension(210, 100));
+                foldersScroll.getViewport().setBackground(BG_NEUTRAL);
+                folderList.setBackground(BG_NEUTRAL);
+                accountHeader.setForeground(ACCENT_BLUE);
+                JPanel leftCol = new JPanel(new BorderLayout());
+                leftCol.setBackground(BG_NEUTRAL);
+                leftCol.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, HEADER_GRAY));
+                leftCol.add(accountHeader, BorderLayout.NORTH);
+                leftCol.add(foldersScroll, BorderLayout.CENTER);
+                JPanel headBar = new JPanel(new BorderLayout());
+                headBar.setBackground(HEADER_GRAY);
+                headBar.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
+                JLabel folderTitle = new JLabel(currentFolderDisplay == null ? "" : currentFolderDisplay);
+                folderTitle.setFont(folderTitle.getFont().deriveFont(Font.BOLD, 13f));
+                folderTitle.setForeground(new Color(0x1F2A36));
+                headBar.add(folderTitle, BorderLayout.WEST);
+                JLabel unreadHint = new JLabel(I18n.tr("foxmail.hint"));
+                unreadHint.setForeground(new Color(0x5A6A7A));
+                headBar.add(unreadHint, BorderLayout.EAST);
+                JPanel listCol = new JPanel(new BorderLayout());
+                listCol.add(headBar, BorderLayout.NORTH);
+                listCol.add(tableScroll, BorderLayout.CENTER);
+                JSplitPane inner = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, listCol, readerScroll);
+                inner.setResizeWeight(0.48);
+                inner.setDividerSize(6);
+                lastSplitA = inner;
+                JSplitPane outer = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, leftCol, inner);
+                outer.setResizeWeight(0.17);
+                outer.setDividerSize(0);
                 lastSplitB = outer;
                 centerPanel.add(outer, BorderLayout.CENTER);
             }
@@ -401,6 +462,21 @@ public final class MailFrame extends JFrame {
 
     private void showInfo(String what) {
         JOptionPane.showMessageDialog(this, what + ": Demo-Shell — " + I18n.tr("about.text"));
+    }
+
+    /** Look&Feel zur Laufzeit wechseln und Persistenz aktualisieren. */
+    public void switchLookFeel(String key) {
+        try {
+            String active = LookFeel.apply(key);
+            lookKey = key;
+            settings.put("ui.laf", key);
+            SwingUtilities.updateComponentTreeUI(this);
+            applyLayout();
+            statusRight.setText(I18n.tr("look.active", active));
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this,
+                    I18n.tr("look.fail", ex.getMessage()), I18n.tr("menu.view.look"), JOptionPane.WARNING_MESSAGE);
+        }
     }
 
     /** Kopfzeilen-Mail selektieren (für automatisierte Screenshots/Tests). */
