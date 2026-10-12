@@ -18,50 +18,57 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * M2-004: ClamdClient protocol conformance test against a mock clamd server.
- * The mock implements the real clamd TCP protocol: line commands, PING->PONG,
- * VERSION, and INSTREAM with 4-byte big-endian length-prefixed chunks
- * terminated by a zero-length chunk.
+ *
+ * Der Mock bildet das VERHALTEN DES ECHTEN clamd ab (Live-Test 12.10.2026):
+ * Im Zeilen-Modus (\n-Terminator) beantwortet clamd pro Verbindung GENAU EIN
+ * Kommando und schließt dann die Verbindung. Der Client (ClamdClient) öffnet
+ * daher pro Kommando eine frische Verbindung — der Mock akzeptiert
+ * dementsprechend mehrere Verbindungen nacheinander.
+ * INSTREAM: Kommando + 4-Byte-Big-Endian-Chunks + Zero-Ende auf DEMSELBEN Socket.
  */
 class ClamdClientProtocolTest {
 
     /** The EICAR test signature string (standard antivirus test file). */
     private static final String EICAR =
-            "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H$H*";
+            "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*";
 
     private ServerSocket serverSocket;
     private Thread serverThread;
     private final AtomicReference<byte[]> receivedPayload = new AtomicReference<>();
     private volatile boolean framingOk = false;
+    private volatile boolean running = true;
 
     @BeforeEach
     void startMockClamd() throws IOException {
         serverSocket = new ServerSocket(0); // random free port
-        serverThread = new Thread(this::serveOneConnection);
+        serverThread = new Thread(this::serveAcceptLoop);
         serverThread.setDaemon(true);
         serverThread.start();
     }
 
     @AfterEach
     void stopMockClamd() throws IOException {
+        running = false;
         if (serverSocket != null && !serverSocket.isClosed()) {
             serverSocket.close();
         }
     }
 
-    private void serveOneConnection() {
-        try (Socket client = serverSocket.accept();
-             DataInputStream in = new DataInputStream(client.getInputStream());
-             OutputStream out = client.getOutputStream()) {
+    /** Acceptet Verbindungen wie echter clamd: eine Verbindung = ein Scan-Vorgang. */
+    private void serveAcceptLoop() {
+        while (running) {
+            try (Socket client = serverSocket.accept();
+                 DataInputStream in = new DataInputStream(client.getInputStream());
+                 OutputStream out = client.getOutputStream()) {
 
-            while (true) {
                 String line = readLine(in);
-                if (line == null) break;
+                if (line == null) continue;
                 switch (line.trim()) {
                     case "PING" -> out.write("PONG\n".getBytes(StandardCharsets.US_ASCII));
                     case "VERSION" -> out.write(
                             "ClamAV 1.3.1/27400/Mon Oct 12 2026 08:00:00\n"
                                     .getBytes(StandardCharsets.US_ASCII));
-                    case "INSTREAM" -> {
+                    case "INSTREAM", "nINSTREAM" -> {
                         ByteArrayOutputStream payload = new ByteArrayOutputStream();
                         boolean ok = true;
                         while (true) {
@@ -89,9 +96,10 @@ class ClamdClientProtocolTest {
                             .getBytes(StandardCharsets.US_ASCII));
                 }
                 out.flush();
+                // wie echter clamd im Zeilen-Modus: Verbindung danach schließen
+            } catch (IOException e) {
+                if (!running) return; // Server beim Test-Teardown geschlossen
             }
-        } catch (IOException e) {
-            // connection closed by client — normal
         }
     }
 
@@ -164,13 +172,16 @@ class ClamdClientProtocolTest {
     }
 
     @Test
-    void sequentialCommandsOnOneConnection() throws IOException {
+    void sequentialCommandsSurviveConnectionClosePerCommand() throws IOException {
+        // Real clamd closes after EVERY line-mode command; the client must still
+        // answer PING -> VERSION -> INSTREAM cleanly (fresh connection each).
         try (ClamdClient client = new ClamdClient("127.0.0.1", serverSocket.getLocalPort())) {
             client.connect();
             assertTrue(client.ping());
             assertNotNull(client.version());
             assertEquals("stream: OK",
                     client.streamScan(new ByteArrayInputStream("one".getBytes(StandardCharsets.UTF_8))));
+            assertTrue(client.ping(), "client must still work after connection closes");
         }
     }
 }

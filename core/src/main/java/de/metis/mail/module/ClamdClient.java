@@ -1,27 +1,37 @@
 package de.metis.mail.module;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.logging.Logger;
 
 /**
- * ClamAV client using the real clamd TCP protocol.
- * Communicates over TCP port 3310.
+ * ClamAV client using the real clamd TCP protocol (port 3310).
+ *
+ * <p>Wichtige Protokoll-Erkenntnis (Live-Test gegen echten clamd, 12.10.2026):
+ * clamd unterscheidet zwei Kommando-Modi:
+ * <ul>
+ *   <li>Zeilen-Terminator (\n): <b>Single-Command-Modus</b> — clamd antwortet und
+ *       SCHLIESST die Verbindung danach.</li>
+ *   <li>NULL-Terminator (\0): Persistent-Modus — Verbindung bleibt offen.</li>
+ * </ul>
+ * Ein reiner Mock-Server akzeptierte mehrere \n-Kommandos pro Verbindung, der echte
+ * clamd tat das NICHT (broken pipe ab Kommando 2). Dieser Client verwendet daher
+ * bewusst pro Kommando eine frische Verbindung — das ist auf JEDER clamd-Version
+ * korrekt. INSTREAM bleibt ein Vorgang pro Verbindung (Kommando + Chunks + Antwort
+ * gehören auf dieselbe Socket).</p>
  */
 public class ClamdClient implements AutoCloseable {
 
     private static final Logger LOG = Logger.getLogger(ClamdClient.class.getName());
-    private static final String TERMINATOR = "\n";
-    private static final String COMMAND_PING = "PING";
-    private static final String COMMAND_VERSION = "VERSION";
-    private static final String COMMAND_INSTREAM = "INSTREAM";
+    private static final int CHUNK_SIZE = 4096;
 
     private final String host;
     private final int port;
-    private Socket socket;
-    private BufferedReader reader;
-    private OutputStream writer;
 
     public ClamdClient(String host, int port) {
         this.host = host;
@@ -29,77 +39,84 @@ public class ClamdClient implements AutoCloseable {
     }
 
     /**
-     * Connect to the clamd server.
+     * Prüft, ob clamd erreichbar ist (reine Verbindungsaufnahme — clamd schließt
+     * im Zeilen-Modi die Verbindung nach jedem Kommando, deshalb hält dieser
+     * Client keine Verbindung).
      */
     public void connect() throws IOException {
-        socket = new Socket(host, port);
-        reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.US_ASCII));
-        writer = socket.getOutputStream();
-        LOG.info("Connected to clamd at " + host + ":" + port);
+        try (Socket probe = openSocket()) {
+            LOG.info("clamd reachable at " + host + ":" + port);
+        }
     }
 
-    /**
-     * Send PING command to check if clamd is alive.
-     * Real response is "PONG" followed by newline.
-     */
+    /** PING -> PONG; true wenn der Daemon lebt. */
     public boolean ping() throws IOException {
-        sendCommand(COMMAND_PING);
-        String response = reader.readLine();
-        return "PONG".equalsIgnoreCase(response);
+        String response = oneShot("PING");
+        return response != null && response.equalsIgnoreCase("PONG");
     }
 
-    /**
-     * Get clamd version.
-     */
+    /** VERSION -> z.B. "ClamAV 1.4.2/27600/...". */
     public String version() throws IOException {
-        sendCommand(COMMAND_VERSION);
-        return reader.readLine();
+        return oneShot("VERSION");
     }
 
     /**
-     * Stream file content for virus scanning via INSTREAM.
-     * Real clamd protocol: send "INSTREAM\n", then data in chunks of
-     * [4-byte big-endian length][payload], terminated by a zero-length chunk.
-     * Response: "stream: OK" or "stream: <Signature> FOUND".
+     * Streamt Daten zum Scan via INSTREAM.
+     * Protokoll: "INSTREAM\n", dann Chunks als
+     * [4-Byte Big-Endian Länge][Payload], terminiert durch Zero-Length-Chunk.
+     * Antwort: "stream: OK" oder "stream: &lt;Signature&gt; FOUND".
      */
     public String streamScan(InputStream fileData) throws IOException {
-        sendCommand(COMMAND_INSTREAM);
+        try (Socket socket = openSocket()) {
+            OutputStream out = socket.getOutputStream();
+            BufferedReader in = new BufferedReader(
+                    new InputStreamReader(socket.getInputStream(), StandardCharsets.US_ASCII));
 
-        // Stream the file content in length-prefixed chunks
-        byte[] buffer = new byte[4096];
-        int bytesRead;
-        while ((bytesRead = fileData.read(buffer)) != -1) {
-            writer.write(new byte[]{
-                    (byte) (bytesRead >> 24),
-                    (byte) (bytesRead >> 16),
-                    (byte) (bytesRead >> 8),
-                    (byte) bytesRead});
-            writer.write(buffer, 0, bytesRead);
+            out.write("nINSTREAM\n".getBytes(StandardCharsets.US_ASCII));
+
+            byte[] buffer = new byte[CHUNK_SIZE];
+            int bytesRead;
+            while ((bytesRead = fileData.read(buffer)) != -1) {
+                out.write(new byte[]{
+                        (byte) (bytesRead >> 24),
+                        (byte) (bytesRead >> 16),
+                        (byte) (bytesRead >> 8),
+                        (byte) bytesRead});
+                out.write(buffer, 0, bytesRead);
+            }
+
+            // Zero-Length-Chunk = Stream-Ende
+            out.write(new byte[]{0, 0, 0, 0});
+            out.flush();
+
+            String response = in.readLine();
+            LOG.fine("INSTREAM response: " + response);
+            return response == null ? null : response.trim();
         }
-
-        // Zero-length chunk signals EOF
-        writer.write(new byte[]{0, 0, 0, 0});
-        writer.flush();
-
-        // Read response
-        String response = reader.readLine();
-        LOG.fine("INSTREAM response: " + response);
-        
-        // Real clamd responses: "stream: OK" or "stream: VIRUS FOUND"
-        return response;
     }
 
-    private void sendCommand(String command) throws IOException {
-        LOG.fine("Sending command: " + command);
-        writer.write((command + TERMINATOR).getBytes(StandardCharsets.US_ASCII));
-        writer.flush();
+    /** Ein Kommando pro frischer Verbindung — clamd-Zeilenmodus ist Single-Command. */
+    private String oneShot(String command) throws IOException {
+        try (Socket socket = openSocket()) {
+            OutputStream out = socket.getOutputStream();
+            BufferedReader in = new BufferedReader(
+                    new InputStreamReader(socket.getInputStream(), StandardCharsets.US_ASCII));
+            out.write((command + "\n").getBytes(StandardCharsets.US_ASCII));
+            out.flush();
+            String response = in.readLine();
+            LOG.fine(command + " response: " + response);
+            return response == null ? null : response.trim();
+        }
+    }
+
+    private Socket openSocket() throws IOException {
+        Socket socket = new Socket(host, port);
+        socket.setSoTimeout(30_000);
+        return socket;
     }
 
     @Override
-    public void close() throws IOException {
-        if (socket != null) {
-            socket.close();
-            LOG.info("Disconnected from clamd");
-        }
+    public void close() {
+        // haltunglos: pro Kommando eigene Verbindung
     }
 }
