@@ -22,9 +22,14 @@ class Pop3IntegrationTest {
     private static final String USER = "popuser@example.com";
     private static final String PASS = "popsecret";
 
+    // Unprivileged high ports bound to loopback: default POP3/SMTP ports (110/25)
+    // require root on CI runners (GitHub Actions), which breaks GreenMail startup there.
+    static final ServerSetup POP3 = new ServerSetup(3110, "127.0.0.1", ServerSetup.PROTOCOL_POP3);
+    static final ServerSetup SMTP = new ServerSetup(3025, "127.0.0.1", ServerSetup.PROTOCOL_SMTP);
+
     @RegisterExtension
     static GreenMailExtension greenMail = new GreenMailExtension(
-            new ServerSetup[]{ServerSetup.POP3, ServerSetup.SMTP});
+            new ServerSetup[]{POP3, SMTP});
 
     @BeforeEach
     void setupUser() {
@@ -32,12 +37,12 @@ class Pop3IntegrationTest {
     }
 
     private MailClientConfig pop3Config() {
-        return new MailClientConfig("127.0.0.1", ServerSetup.POP3.getPort(),
+        return new MailClientConfig("127.0.0.1", POP3.getPort(),
                 USER, PASS, MailClientConfig.Security.NONE);
     }
 
     private MailClientConfig smtpConfig() {
-        return new MailClientConfig("127.0.0.1", ServerSetup.SMTP.getPort(),
+        return new MailClientConfig("127.0.0.1", SMTP.getPort(),
                 USER, PASS, MailClientConfig.Security.NONE);
     }
 
@@ -67,7 +72,7 @@ class Pop3IntegrationTest {
 
     @Test
     void pop3WrongPasswordFails() {
-        MailClientConfig bad = new MailClientConfig("127.0.0.1", ServerSetup.POP3.getPort(),
+        MailClientConfig bad = new MailClientConfig("127.0.0.1", POP3.getPort(),
                 USER, "wrong-password", MailClientConfig.Security.NONE);
         try (Pop3MailClient client = new Pop3MailClient(bad)) {
             assertThrows(MessagingException.class, client::connect);
@@ -77,7 +82,7 @@ class Pop3IntegrationTest {
     @Test
     void pop3DeleteRemovesMessageFromServer() throws Exception {
         GreenMailUtil.sendTextEmail(USER, "sender@example.com", "To be deleted",
-                "bye", ServerSetup.SMTP);
+                "bye", SMTP);
 
         try (Pop3MailClient pop3 = new Pop3MailClient(pop3Config())) {
             pop3.connect();

@@ -24,9 +24,14 @@ class MailProtocolIntegrationTest {
     private static final String USER = "alice@example.com";
     private static final String PASS = "secret123";
 
+    // Unprivileged high ports bound to loopback: default IMAP/SMTP ports (143/25)
+    // require root on CI runners (GitHub Actions), which breaks GreenMail startup there.
+    static final ServerSetup IMAP = new ServerSetup(3143, "127.0.0.1", ServerSetup.PROTOCOL_IMAP);
+    static final ServerSetup SMTP = new ServerSetup(3026, "127.0.0.1", ServerSetup.PROTOCOL_SMTP);
+
     @RegisterExtension
     static GreenMailExtension greenMail = new GreenMailExtension(
-            new ServerSetup[]{ServerSetup.IMAP, ServerSetup.SMTP});
+            new ServerSetup[]{IMAP, SMTP});
 
     @BeforeEach
     void setupUser() {
@@ -34,12 +39,12 @@ class MailProtocolIntegrationTest {
     }
 
     private MailClientConfig imapConfig() {
-        return new MailClientConfig("127.0.0.1", ServerSetup.IMAP.getPort(),
+        return new MailClientConfig("127.0.0.1", IMAP.getPort(),
                 USER, PASS, MailClientConfig.Security.NONE);
     }
 
     private MailClientConfig smtpConfig() {
-        return new MailClientConfig("127.0.0.1", ServerSetup.SMTP.getPort(),
+        return new MailClientConfig("127.0.0.1", SMTP.getPort(),
                 USER, PASS, MailClientConfig.Security.NONE);
     }
 
@@ -65,9 +70,11 @@ class MailProtocolIntegrationTest {
 
     @Test
     void imapFetchConvertsToCoreModel() throws MessagingException, IOException {
-        // Seed a message into the inbox via GreenMail utility
+        // Seed a message into the inbox via GreenMail utility.
+        // Must go through the SMTP setup: sendTextEmail transports via SMTP and
+        // falls back to localhost:25 when given a non-SMTP ServerSetup.
         GreenMailUtil.sendTextEmail(USER, "sender@example.com", "IMAP test subject",
-                "IMAP test body", ServerSetup.IMAP);
+                "IMAP test body", SMTP);
 
         try (ImapMailClient client = new ImapMailClient(imapConfig())) {
             client.connect();
@@ -90,7 +97,7 @@ class MailProtocolIntegrationTest {
 
     @Test
     void imapWrongPasswordFails() {
-        MailClientConfig bad = new MailClientConfig("127.0.0.1", ServerSetup.IMAP.getPort(),
+        MailClientConfig bad = new MailClientConfig("127.0.0.1", IMAP.getPort(),
                 USER, "wrong-password", MailClientConfig.Security.NONE);
         try (ImapMailClient client = new ImapMailClient(bad)) {
             assertThrows(MessagingException.class, client::connect);

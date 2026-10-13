@@ -30,9 +30,14 @@ class SyncIntegrationTest {
     private static final String USER = "sync@example.com";
     private static final String PASS = "syncpass";
 
+    // Unprivileged high ports bound to loopback: default IMAP/SMTP ports (143/25)
+    // require root on CI runners (GitHub Actions), which breaks GreenMail startup there.
+    static final ServerSetup IMAP = new ServerSetup(3243, "127.0.0.1", ServerSetup.PROTOCOL_IMAP);
+    static final ServerSetup SMTP = new ServerSetup(3225, "127.0.0.1", ServerSetup.PROTOCOL_SMTP);
+
     @RegisterExtension
     static GreenMailExtension greenMail = new GreenMailExtension(
-            new ServerSetup[]{ServerSetup.IMAP, ServerSetup.SMTP});
+            new ServerSetup[]{IMAP, SMTP});
 
     @TempDir
     Path dir;
@@ -46,7 +51,7 @@ class SyncIntegrationTest {
         greenMail.setUser(USER, USER, PASS);
         store = new MailStore(dir.resolve("sync.db"), dir.resolve("att"));
         long accountId = store.createAccount("sync", "imap", "127.0.0.1",
-                ServerSetup.IMAP.getPort(), "127.0.0.1", ServerSetup.SMTP.getPort(), USER);
+                IMAP.getPort(), "127.0.0.1", SMTP.getPort(), USER);
         folderId = store.getOrCreateFolder(accountId, "INBOX");
         sync = new MailSyncService(store);
     }
@@ -59,7 +64,7 @@ class SyncIntegrationTest {
                 .plainTextBody(body)
                 .build();
         try (SmtpMailClient smtp = new SmtpMailClient(new MailClientConfig(
-                "127.0.0.1", ServerSetup.SMTP.getPort(), USER, PASS, MailClientConfig.Security.NONE))) {
+                "127.0.0.1", SMTP.getPort(), USER, PASS, MailClientConfig.Security.NONE))) {
             smtp.send(msg);
         }
     }
@@ -72,7 +77,7 @@ class SyncIntegrationTest {
                         + "http://evil.click/4 http://evil.top/5 und bestaetigen Sie Ihr Passwort");
 
         try (ImapMailClient imap = new ImapMailClient(new MailClientConfig(
-                "127.0.0.1", ServerSetup.IMAP.getPort(), USER, PASS, MailClientConfig.Security.NONE))) {
+                "127.0.0.1", IMAP.getPort(), USER, PASS, MailClientConfig.Security.NONE))) {
             imap.connect();
             int affected = sync.syncImap(folderId, imap, "INBOX", 50);
             assertTrue(affected >= 2);
@@ -94,7 +99,7 @@ class SyncIntegrationTest {
         sendMail("Mail one", "body");
 
         try (ImapMailClient imap = new ImapMailClient(new MailClientConfig(
-                "127.0.0.1", ServerSetup.IMAP.getPort(), USER, PASS, MailClientConfig.Security.NONE))) {
+                "127.0.0.1", IMAP.getPort(), USER, PASS, MailClientConfig.Security.NONE))) {
             imap.connect();
             sync.syncImap(folderId, imap, "INBOX", 50);
             assertEquals(1, store.countMessages(folderId));
@@ -116,7 +121,7 @@ class SyncIntegrationTest {
         sendMail("Thread root", "root body");
 
         try (ImapMailClient imap = new ImapMailClient(new MailClientConfig(
-                "127.0.0.1", ServerSetup.IMAP.getPort(), USER, PASS, MailClientConfig.Security.NONE))) {
+                "127.0.0.1", IMAP.getPort(), USER, PASS, MailClientConfig.Security.NONE))) {
             imap.connect();
             sync.syncImap(folderId, imap, "INBOX", 50);
         }
