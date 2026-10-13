@@ -52,12 +52,12 @@
 |---|---|---|---|
 | M4-001 | Swing-UI-Shell: Hauptfenster, Menü, neues Modul `desktop/` | ✅ FERTIG 12.10.2026 | Prometheus |
 | M4-002 | Pluggables Layout-System: `MailUILayout`-Interface + Presets Default/Thunderbird/Outlook/Gmail (+Foxmail), zur Laufzeit tauschbar, Wahl persistiert | ✅ FERTIG 12.10.2026 | Prometheus |
-| M4-003 | Account-Verwaltung per UI: mehrere Konten (IMAP/POP3+SMTP), CRUD, Test-Login, Passwörter verschlüsselt gespeichert | 🟡 TEILWEISE 13.10.2026: **Anlage-Maske fertig** (Datei→E-Mail-Konto anlegen: Name, E-Mail, IMAP/POP3, Server/Port/Verschlüsselung Empfang+SMTP, Benutzer, Kennwort, Standard-Ports automatisch, Strato-Preset, Verbindungstest live, SQLite-Persistenz Schema v2 inkl. v1-Migration, AccountSchemaTest 4 Tests grün) ✅; offen: Konten-Bearbeiten/Löschen per UI, Konto-Umschalter, echter Sync ins Postfach, Passwort-Verschlüsselung (aktuell Klartext in SQLite — Keyring folgt) | Prometheus |
+| M4-003 | Account-Verwaltung per UI: mehrere Konten (IMAP/POP3+SMTP), CRUD, Test-Login, Passwörter verschlüsselt gespeichert | 🟡 TEILWEISE 13.10.2026: **Anlage-Maske fertig** (Datei→E-Mail-Konto anlegen: Name, E-Mail, IMAP/POP3, Server/Port/Verschlüsselung Empfang+SMTP, Benutzer, Kennwort, Standard-Ports automatisch, Strato-Preset, Verbindungstest live, SQLite-Persistenz Schema v2 inkl. v1-Migration, AccountSchemaTest 4 Tests grün) ✅; offen: Konten-Bearbeiten/Löschen per UI, Konto-Umschalter, echter Sync ins Postfach FERTIG 13.10.2026 (SyncService + Menü „Mails synchronisieren“, SwingWorker, Commit 4a03945), Passwort-Verschlüsselung (Metis-Ziel MailKeyring läuft) (aktuell Klartext in SQLite — Keyring folgt) | Prometheus |
 | M4-004 | Mail-Liste + Lesebereich: Sortierung, Paging, HTML saniert via JEditorPane, Header + SPF/DKIM/DMARC-Badge, Spam-Ampel | 🟡 TEILWEISE 12.10.2026: Liste/Leser/sanitiertes HTML/Spam-Ampel als Prozent (0-100, Schwellen 30/60) ✅; SPF/DKIM-Badge + Paging-UI offen | Prometheus |
 | M4-005 | Threading als Option: flache Liste ↔ Konversations-Gruppierung umschaltbar (Backend: MessageThreader/thread_id) | ✅ FERTIG 12.10.2026 | Prometheus |
 | M4-006 | Suche + Attachments: Suchfeld (SQLite-Suche), Attachments anzeigen/öffnen/speichern | 🟡 TEILWEISE 12.10.2026: Suchfeld + Schnellfilter ✅; Attachment-UI offen | Prometheus |
 | M4-007 | Composer: Schreiben/Antworten/Antw. an alle/Weiterleiten via SMTP, Multipart + Attachments | 🟡 TEILWEISE 12.10.2026: Neu/Antwort (mit Zitat)/Weiterleitung → Gesendet-Ordner (lokal) ✅; SMTP-Versand + Anhänge offen | Prometheus |
-| M4-008 | Flags/Sync: Gelesen/Ungesehen/Flag/Soft-Delete, Sync-Status pro Account, Worker-Threads (kein IO auf EDT) | 🟡 TEILWEISE 12.10.2026: Gelesen/Flag/Soft-Delete + SwingWorker (kein IO auf EDT) ✅; Sync-Status pro Konto offen | Prometheus |
+| M4-008 | Flags/Sync: Gelesen/Ungesehen/Flag/Soft-Delete, Sync-Status pro Account, Worker-Threads (kein IO auf EDT) | 🟡 TEILWEISE 12.10.2026: Gelesen/Flag/Soft-Delete + SwingWorker (kein IO auf EDT) ✅; Sync-Status in der Statuszeile FERTIG 13.10.2026 (sync.running/sync.done/sync.fail inkl. Fehlertext); offen: dauerhafte Anzeige je Konto | Prometheus |
 | M4-009 | Polish: System-LAF, HiDPI, Tray (Backlog), Smoke-Tests headless | 🟡 TEILWEISE 13.10.2026: System-LAF + Design-Menü plattformgefiltert (GTK nur Linux, Windows-LAF nur Windows) + Logo-Icon ✅; **Farbschema Hell/Dunkel/Automatisch verdrahtet** (Menü Ansicht→Farbschema, ui.theme in SQLite, Theme-Palette ersetzt Hardcodes, Dark-Reader-CSS, ThemeTest 11 Tests grün) ✅; CI: GitHub Actions grün inkl. Release-Jar ab v0.1.2-m4 (GreenMail-Tests auf unprivilegierte Loopback-Ports umgestellt) ✅; HiDPI/Tray Backlog | Prometheus |
 
 ### Phase 6: Android UI (M5)
@@ -95,7 +95,7 @@
 
 ## Next Actions
 
-1. M4-001: JavaFX-UI-Shell (neues Modul `desktop/`)
-2. M4-002: UI an Core/Storage anbinden (Folder-Liste, Mail-Liste mit Threading, Reader mit HtmlSanitizer)
-3. Heute Abend mit Georg (vor Ort, sudo): `sudo apt install clamav-daemon` → echter EICAR-Livetest gegen ClamdClient
-4. Optional: IMAP/SMTP/POP3-Livetest gegen Strato-Postfach (nur mit Georgs OK)
+1. Metis (Ziele per POST /api/usergoals angelegt, Status OFFEN): MailKeyring (AES-GCM/PBKDF2, Prio 85), SecurityBadge SPF/DKIM/DMARC (Prio 70), SearchQueryBuilder (Prio 65)
+2. Prometheus: Konto-Umschalter + Bearbeiten/Löschen per UI (M4-003 Rest), Attachment-UI (M4-006), SMTP-Versand + Anhänge (M4-007)
+3. Offen mit Georg: sudo apt install clamav-daemon → echter EICAR-Livetest gegen ClamdClient; IMAP/SMTP/POP3-Livetest gegen Strato-Postfach
+4. Repo-Hygiene: master ↔ main zusammenführen (Code liegt auf master, main enthält nur das Actions-Template)
