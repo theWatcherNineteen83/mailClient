@@ -45,7 +45,7 @@ public final class ComposeDialog extends JDialog {
         grid.add(new JLabel(I18n.tr("compose.body")), c);
         c.gridx = 1; c.weightx = 1; c.fill = GridBagConstraints.BOTH; c.weighty = 1;
         JScrollPane bodyScroll = new JScrollPane(bodyArea);
-        bodyScroll.setBorder(BorderFactory.createLineBorder(new Color(0xD4dbe2)));
+        bodyScroll.setBorder(BorderFactory.createLineBorder(Theme.border()));
         grid.add(bodyScroll, c);
 
         JButton send = new JButton(I18n.tr("compose.send"));

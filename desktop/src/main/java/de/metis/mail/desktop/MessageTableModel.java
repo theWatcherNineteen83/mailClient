@@ -77,8 +77,9 @@ public final class MessageTableModel extends AbstractTableModel {
         String preview = m.preview() == null ? "" : m.preview();
         if (preview.length() > 90) preview = preview.substring(0, 90) + "…";
         String flag = m.unseen() ? " <b>●</b>" : "";
+        String soft = String.format("#%06x", Theme.textSoft().getRGB() & 0xFFFFFF);
         return "<html><body style='width:300px'><b>" + esc(m.subject()) + "</b>" + flag
-                + "<br><span style='color:#5a6a7a'>" + esc(preview) + "</span></body></html>";
+                + "<br><span style='color:" + soft + "'>" + esc(preview) + "</span></body></html>";
     }
 
     private static DateTimeFormatter formatter(String lang) {

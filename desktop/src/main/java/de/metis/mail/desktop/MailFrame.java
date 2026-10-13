@@ -45,11 +45,7 @@ public final class MailFrame extends JFrame {
     private LayoutPreset layout;
     private boolean groupedThreads;
     private String lookKey;
-
-    /** Design-Palette: neutrale helle Foxmail-Farben (Grau/Blau/Weiß). */
-    private static final Color BG_NEUTRAL = new Color(0xFAFBFC);
-    private static final Color ACCENT_BLUE = new Color(0x3D6EB5);
-    private static final Color HEADER_GRAY = new Color(0xEDF1F5);
+    private String themeKey;
 
     public MailFrame(MailStore store, UiSettings settings, LayoutPreset preset) {
         this.store = store;
@@ -58,6 +54,8 @@ public final class MailFrame extends JFrame {
         this.groupedThreads = "true".equals(settings.get("group.threads", "false"));
         this.lookKey = System.getProperty("mailclient.laf", settings.get("ui.laf", "auto"));
         if (!LookFeel.isAvailable(this.lookKey)) this.lookKey = "auto";
+        this.themeKey = System.getProperty("mailclient.theme", settings.get("ui.theme", Theme.AUTO));
+        Theme.set(this.themeKey);
 
         setTitle("MailClient");
         setIconImages(loadAppIcons());
@@ -206,6 +204,15 @@ public final class MailFrame extends JFrame {
             langGroup.add(m);
             langs.add(m);
         }
+        JMenu themes = new JMenu(I18n.tr("menu.view.theme"));
+        view.add(themes);
+        ButtonGroup themeGroup = new ButtonGroup();
+        for (String key : new String[]{Theme.LIGHT, Theme.DARK, Theme.AUTO}) {
+            JRadioButtonMenuItem m = new JRadioButtonMenuItem(I18n.tr("theme." + key), key.equals(Theme.mode()));
+            m.addActionListener(e -> switchTheme(key));
+            themeGroup.add(m);
+            themes.add(m);
+        }
         JMenu looks = new JMenu(I18n.tr("menu.view.look"));
         view.add(looks);
         ButtonGroup lookGroup = new ButtonGroup();
@@ -257,17 +264,29 @@ public final class MailFrame extends JFrame {
         foldersScroll.setBorder(BorderFactory.createEmptyBorder());
         JScrollPane tableScroll = new JScrollPane(messageTable);
         reader.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
-        reader.setBackground(Color.WHITE);
+        reader.setBackground(Theme.surface());
+        reader.setForeground(Theme.text());
+        reader.setCaretColor(Theme.text());
         JScrollPane readerScroll = new JScrollPane(reader);
-        readerScroll.setBorder(BorderFactory.createLineBorder(HEADER_GRAY));
+        readerScroll.setBorder(BorderFactory.createLineBorder(Theme.border()));
 
         boolean previewMode = layout == LayoutPreset.FOXMAIL;
         messageTable.setRowHeight(previewMode ? 46 : 20);
         messageTable.setShowGrid(false);
         messageTable.setIntercellSpacing(new Dimension(0, 0));
-        messageTable.setSelectionBackground(HEADER_GRAY);
-        messageTable.setSelectionForeground(new Color(0x1F2A36));
-        messageTable.getTableHeader().setBackground(HEADER_GRAY);
+        messageTable.setBackground(Theme.surface());
+        messageTable.setForeground(Theme.text());
+        messageTable.setSelectionBackground(Theme.header());
+        messageTable.setSelectionForeground(Theme.text());
+        messageTable.getTableHeader().setBackground(Theme.header());
+        messageTable.getTableHeader().setForeground(Theme.text());
+        folderList.setBackground(Theme.listBg());
+        folderList.setForeground(Theme.text());
+        folderList.setSelectionBackground(Theme.header());
+        folderList.setSelectionForeground(Theme.text());
+        accountHeader.setForeground(Theme.accent());
+        statusLeft.setForeground(Theme.textSoft());
+        statusRight.setForeground(Theme.textSoft());
         messageTable.getColumnModel().getColumn(4).setCellRenderer(new SpamPercentRenderer());
         messageTable.getColumnModel().getColumn(4).setPreferredWidth(64);
         messageTable.getTableHeader().setToolTipText(I18n.tr("col.spam.tip"));
@@ -325,23 +344,21 @@ public final class MailFrame extends JFrame {
             case FOXMAIL -> {
                 // Foxmail-Vorbild: drei Spalten — Konto/Ordner | Liste mit Textvorschau | Lesebereich rechts
                 foldersScroll.setPreferredSize(new Dimension(210, 100));
-                foldersScroll.getViewport().setBackground(BG_NEUTRAL);
-                folderList.setBackground(BG_NEUTRAL);
-                accountHeader.setForeground(ACCENT_BLUE);
+                foldersScroll.getViewport().setBackground(Theme.listBg());
                 JPanel leftCol = new JPanel(new BorderLayout());
-                leftCol.setBackground(BG_NEUTRAL);
-                leftCol.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, HEADER_GRAY));
+                leftCol.setBackground(Theme.listBg());
+                leftCol.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, Theme.border()));
                 leftCol.add(accountHeader, BorderLayout.NORTH);
                 leftCol.add(foldersScroll, BorderLayout.CENTER);
                 JPanel headBar = new JPanel(new BorderLayout());
-                headBar.setBackground(HEADER_GRAY);
+                headBar.setBackground(Theme.header());
                 headBar.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
                 JLabel folderTitle = new JLabel(currentFolderDisplay == null ? "" : currentFolderDisplay);
                 folderTitle.setFont(folderTitle.getFont().deriveFont(Font.BOLD, 13f));
-                folderTitle.setForeground(new Color(0x1F2A36));
+                folderTitle.setForeground(Theme.text());
                 headBar.add(folderTitle, BorderLayout.WEST);
                 JLabel unreadHint = new JLabel(I18n.tr("foxmail.hint"));
-                unreadHint.setForeground(new Color(0x5A6A7A));
+                unreadHint.setForeground(Theme.textSoft());
                 headBar.add(unreadHint, BorderLayout.EAST);
                 JPanel listCol = new JPanel(new BorderLayout());
                 listCol.add(headBar, BorderLayout.NORTH);
@@ -453,11 +470,15 @@ public final class MailFrame extends JFrame {
             String text = bodies != null ? bodies[0] : null;
             if (html != null && !html.isBlank()) {
                 reader.setContentType("text/html");
-                reader.setText(sanitizer.sanitize(html));
+                String clean = sanitizer.sanitize(html);
+                String css = Theme.readerCss();
+                reader.setText(css.isEmpty() ? clean : "<style>" + css + "</style>" + clean);
             } else {
                 reader.setContentType("text/plain");
                 reader.setText((text == null ? "" : text) + "\n\n— Vorschau: " + m.preview());
             }
+            reader.setBackground(Theme.surface());
+            reader.setForeground(Theme.text());
             reader.setCaretPosition(0);
             statusRight.setText(I18n.tr("status.selected", m.subject()));
             if (m.unseen()) {
@@ -579,6 +600,20 @@ public final class MailFrame extends JFrame {
 
     private void showInfo(String what) {
         JOptionPane.showMessageDialog(this, what + ": Demo-Shell — " + I18n.tr("about.text"));
+    }
+
+    /** Farbschema (Hell/Dunkel/Automatisch) zur Laufzeit wechseln, persistieren, neu aufbauen. */
+    public void switchTheme(String key) {
+        themeKey = key;
+        Theme.set(key);
+        settings.put("ui.theme", key);
+        SwingUtilities.updateComponentTreeUI(this);
+        applyLayout();
+        reloadMessages();
+        int v = messageTable.getSelectedRow();
+        if (v >= 0) onMessageSelected();
+        statusRight.setText(I18n.tr("theme.active", I18n.tr("theme." + Theme.mode())));
+        repaint();
     }
 
     /** Look&Feel zur Laufzeit wechseln und Persistenz aktualisieren. */
