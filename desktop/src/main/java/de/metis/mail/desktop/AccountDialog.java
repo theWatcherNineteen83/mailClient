@@ -242,12 +242,15 @@ public final class AccountDialog extends JDialog {
             return;
         }
         try {
-            store.createAccount(name, email,
+            long id = store.createAccount(name, email,
                     ((String) protocolBox.getSelectedItem()).toLowerCase(),
                     inHost.getText().trim(), ip, ((Sec) inSec.getSelectedItem()).name().toLowerCase(),
                     outHost.getText().trim(), op, ((Sec) outSec.getSelectedItem()).name().toLowerCase(),
                     user, new String(passField.getPassword()));
-            store.getOrCreateFolder(store.accountIdByName(name), "INBOX");
+            // Standard-Ordner wie im Demo-Bestand: Baum zeigt Posteingang/Gesendet/Archiv/Papierkorb
+            for (String folder : new String[]{"Posteingang", "Gesendet", "Archiv", "Papierkorb"}) {
+                store.getOrCreateFolder(id, folder);
+            }
             savedName = name;
             dispose();
         } catch (SQLException e) {

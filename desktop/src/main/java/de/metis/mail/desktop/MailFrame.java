@@ -2,6 +2,7 @@ package de.metis.mail.desktop;
 
 import de.metis.mail.db.MailStore;
 import de.metis.mail.db.StoredMessage;
+import de.metis.mail.db.SyncService;
 import de.metis.mail.security.HtmlSanitizer;
 
 import javax.swing.*;
@@ -174,7 +175,7 @@ public final class MailFrame extends JFrame {
         JMenu file = mb.add(new JMenu(I18n.tr("menu.file")));
         file.add(item(I18n.tr("menu.file.new"), this::openCompose));
         file.add(item(I18n.tr("menu.file.addaccount"), this::openAccountDialog));
-        file.add(item(I18n.tr("menu.file.sync"), () -> showInfo(I18n.tr("menu.file.sync"))));
+        file.add(item(I18n.tr("menu.file.sync"), this::syncAllAccounts));
         file.addSeparator();
         file.add(item(I18n.tr("menu.file.quit"), this::dispose));
 
@@ -605,6 +606,54 @@ public final class MailFrame extends JFrame {
     private void updateStatus() {
         int n = tableModel.getRowCount();
         statusLeft.setText(I18n.tr("status.count", n, currentFolderDisplay == null ? "-" : currentFolderDisplay));
+    }
+
+    /**
+     * M4-003/M4-008: Alle Konten mit echten Zugangsdaten im Hintergrund abrufen.
+     * Netzwerk-IO läuft im SwingWorker, die Statuszeile zeigt Fortschritt und Ergebnis.
+     */
+    private void syncAllAccounts() {
+        List<MailStore.StoredAccount> accounts;
+        try {
+            accounts = store.listAccounts().stream().filter(SyncService::hasCredentials).toList();
+        } catch (SQLException e) {
+            statusLeft.setText(I18n.tr("sync.fail", "-", e.getMessage()));
+            return;
+        }
+        if (accounts.isEmpty()) {
+            statusLeft.setText(I18n.tr("sync.noaccounts"));
+            return;
+        }
+        statusLeft.setText(I18n.tr("sync.running"));
+        final SyncService service = new SyncService();
+        new SwingWorker<List<SyncService.SyncResult>, Void>() {
+            @Override
+            protected List<SyncService.SyncResult> doInBackground() {
+                List<SyncService.SyncResult> out = new ArrayList<>();
+                for (MailStore.StoredAccount acc : accounts) {
+                    out.add(service.syncAccount(store, acc));
+                }
+                return out;
+            }
+
+            @Override
+            protected void done() {
+                StringBuilder sb = new StringBuilder();
+                try {
+                    for (SyncService.SyncResult r : get()) {
+                        if (sb.length() > 0) sb.append("  ·  ");
+                        sb.append(r.ok()
+                                ? I18n.tr("sync.done", r.account(), r.fetched())
+                                : I18n.tr("sync.fail", r.account(), r.error()));
+                    }
+                } catch (Exception e) {
+                    sb.setLength(0);
+                    sb.append(I18n.tr("sync.fail", "-", String.valueOf(e.getMessage())));
+                }
+                statusLeft.setText(sb.toString());
+                reloadMessages();
+            }
+        }.execute();
     }
 
     private void showInfo(String what) {
