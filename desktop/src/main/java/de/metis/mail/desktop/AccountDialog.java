@@ -41,11 +41,15 @@ public final class AccountDialog extends JDialog {
     private final JTextArea resultArea = new JTextArea(4, 40);
 
     private final MailStore store;
+    /** null = Neuanlage; sonst das zu bearbeitende Konto (M4-003: Konten bearbeiten). */
+    private final MailStore.StoredAccount existing;
     private String savedName;
 
-    private AccountDialog(Window owner, MailStore store) {
-        super(owner, I18n.tr("account.title"), Dialog.ModalityType.APPLICATION_MODAL);
+    private AccountDialog(Window owner, MailStore store, MailStore.StoredAccount existing) {
+        super(owner, existing == null ? I18n.tr("account.title") : I18n.tr("account.title.edit"),
+                Dialog.ModalityType.APPLICATION_MODAL);
         this.store = store;
+        this.existing = existing;
 
         inSec.setSelectedItem(Sec.SSL);
         outSec.setSelectedItem(Sec.SSL);
@@ -55,6 +59,8 @@ public final class AccountDialog extends JDialog {
         protocolBox.addActionListener(e -> applyDefaults());
         inSec.addActionListener(e -> applyDefaults());
         outSec.addActionListener(e -> applyDefaults());
+        // Erst nach den Default-Listenern befüllen, damit Ports des Kontos stehen bleiben
+        if (existing != null) prefill(existing);
 
         resultArea.setEditable(false);
         resultArea.setLineWrap(true);
@@ -111,9 +117,18 @@ public final class AccountDialog extends JDialog {
         setLocationRelativeTo(owner);
     }
 
-    /** Öffnet den Dialog modal; liefert den gespeicherten Kontonamen oder null (abgebrochen). */
+    /** Öffnet den Dialog modal zum Anlegen; liefert den gespeicherten Kontonamen oder null (abgebrochen). */
     public static String open(Window owner, MailStore store) {
-        AccountDialog d = new AccountDialog(owner, store);
+        return open(owner, store, null);
+    }
+
+    /** M4-003: bestehendes Konto bearbeiten (Felder vorbefüllt, Speichern aktualisiert den Datensatz). */
+    public static String openEdit(Window owner, MailStore store, MailStore.StoredAccount account) {
+        return open(owner, store, account);
+    }
+
+    private static String open(Window owner, MailStore store, MailStore.StoredAccount account) {
+        AccountDialog d = new AccountDialog(owner, store, account);
         d.setVisible(true);
         return d.savedName;
     }
@@ -154,6 +169,30 @@ public final class AccountDialog extends JDialog {
         outSec.setSelectedItem(Sec.SSL);
         String email = emailField.getText().trim();
         if (userField.getText().isBlank()) userField.setText(email);
+    }
+
+    /** Felder mit einem bestehenden Konto vorbefüllen (Bearbeiten-Modus). */
+    private void prefill(MailStore.StoredAccount a) {
+        nameField.setText(a.name());
+        emailField.setText(a.email() == null ? "" : a.email());
+        protocolBox.setSelectedItem("pop3".equalsIgnoreCase(a.protocol()) ? "POP3" : "IMAP");
+        inHost.setText(a.host() == null ? "" : a.host());
+        if (a.port() > 0) inPort.setText(String.valueOf(a.port()));
+        inSec.setSelectedItem(secOfName(a.security()));
+        outHost.setText(a.smtpHost() == null ? "" : a.smtpHost());
+        if (a.smtpPort() > 0) outPort.setText(String.valueOf(a.smtpPort()));
+        outSec.setSelectedItem(secOfName(a.smtpSecurity()));
+        userField.setText(a.username() == null ? "" : a.username());
+        passField.setText(a.password() == null ? "" : a.password());
+    }
+
+    private static Sec secOfName(String name) {
+        if (name == null || name.isBlank()) return Sec.SSL;
+        try {
+            return Sec.valueOf(name.trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return Sec.SSL;
+        }
     }
 
     // ---------- Logik ----------
@@ -242,14 +281,22 @@ public final class AccountDialog extends JDialog {
             return;
         }
         try {
-            long id = store.createAccount(name, email,
-                    ((String) protocolBox.getSelectedItem()).toLowerCase(),
-                    inHost.getText().trim(), ip, ((Sec) inSec.getSelectedItem()).name().toLowerCase(),
-                    outHost.getText().trim(), op, ((Sec) outSec.getSelectedItem()).name().toLowerCase(),
-                    user, new String(passField.getPassword()));
-            // Standard-Ordner wie im Demo-Bestand: Baum zeigt Posteingang/Gesendet/Archiv/Papierkorb
-            for (String folder : new String[]{"Posteingang", "Gesendet", "Archiv", "Papierkorb"}) {
-                store.getOrCreateFolder(id, folder);
+            String protocol = ((String) protocolBox.getSelectedItem()).toLowerCase();
+            String security = ((Sec) inSec.getSelectedItem()).name().toLowerCase();
+            String smtpSecurity = ((Sec) outSec.getSelectedItem()).name().toLowerCase();
+            String inHostValue = inHost.getText().trim();
+            String outHostValue = outHost.getText().trim();
+            String password = new String(passField.getPassword());
+            if (existing == null) {
+                long id = store.createAccount(name, email, protocol, inHostValue, ip, security,
+                        outHostValue, op, smtpSecurity, user, password);
+                // Standard-Ordner wie im Demo-Bestand: Baum zeigt Posteingang/Gesendet/Archiv/Papierkorb
+                for (String folder : new String[]{"Posteingang", "Gesendet", "Archiv", "Papierkorb"}) {
+                    store.getOrCreateFolder(id, folder);
+                }
+            } else {
+                store.updateAccount(existing.id(), name, email, protocol, inHostValue, ip, security,
+                        outHostValue, op, smtpSecurity, user, password);
             }
             savedName = name;
             dispose();

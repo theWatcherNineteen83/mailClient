@@ -37,6 +37,10 @@ public final class MailFrame extends JFrame {
     private final JTextField searchField = new PlaceholderTextField("search.placeholder");
     private final JTextField quickFilter = new PlaceholderTextField("filter.quick");
     private final JLabel accountHeader = new JLabel();
+    /** M4-003: Konto-Umschalter — Wechsel lädt Ordner und Mails des gewählten Kontos. */
+    private final JComboBox<String> accountBox = new JComboBox<>();
+    private boolean populatingAccounts;
+    private String currentAccountName;
     private final JLabel statusLeft = new JLabel();
     private final JLabel statusRight = new JLabel();
     private final JToolBar toolBar = new JToolBar();
@@ -143,6 +147,14 @@ public final class MailFrame extends JFrame {
     private void buildToolBar() {
         toolBar.setFloatable(false);
         toolBar.removeAll();
+        accountBox.setToolTipText(I18n.tr("account.switch"));
+        accountBox.setPreferredSize(new Dimension(200, 28));
+        accountBox.setMaximumSize(new Dimension(220, 28));
+        if (accountBox.getItemListeners().length == 0) {
+            accountBox.addActionListener(e -> onAccountSelected());
+        }
+        toolBar.add(accountBox);
+        toolBar.addSeparator();
         JButton newBtn = new JButton(I18n.tr("toolbar.new"));
         JButton replyBtn = new JButton(I18n.tr("toolbar.reply"));
         JButton fwdBtn = new JButton(I18n.tr("toolbar.forward"));
@@ -175,6 +187,8 @@ public final class MailFrame extends JFrame {
         JMenu file = mb.add(new JMenu(I18n.tr("menu.file")));
         file.add(item(I18n.tr("menu.file.new"), this::openCompose));
         file.add(item(I18n.tr("menu.file.addaccount"), this::openAccountDialog));
+        file.add(item(I18n.tr("menu.file.editaccount"), this::editAccount));
+        file.add(item(I18n.tr("menu.file.deleteaccount"), this::deleteAccount));
         file.add(item(I18n.tr("menu.file.sync"), this::syncAllAccounts));
         file.addSeparator();
         file.add(item(I18n.tr("menu.file.quit"), this::dispose));
@@ -391,8 +405,51 @@ public final class MailFrame extends JFrame {
 
     // ---------- Daten ----------
 
+    /** Konten in den Umschalter füllen; aktuelles Konto bleibt gewählt (M4-003). */
+    private void refreshAccountBox(List<MailStore.StoredAccount> all) {
+        populatingAccounts = true;
+        try {
+            String keep = currentAccountName;
+            accountBox.removeAllItems();
+            for (MailStore.StoredAccount a : all) {
+                accountBox.addItem(a.name());
+            }
+            if (keep != null && all.stream().anyMatch(a -> a.name().equals(keep))) {
+                accountBox.setSelectedItem(keep);
+            } else if (!all.isEmpty()) {
+                accountBox.setSelectedIndex(0);
+            }
+        } finally {
+            populatingAccounts = false;
+        }
+    }
+
     private void loadData() throws SQLException {
-        accountId = store.accountIdByName("Georg Privat");
+        List<MailStore.StoredAccount> all = store.listAccounts();
+        final String preferred = currentAccountName;
+        String target = preferred != null && all.stream().anyMatch(a -> a.name().equals(preferred))
+                ? preferred
+                : (all.isEmpty() ? null : all.get(0).name());
+        refreshAccountBox(all);
+        if (target == null) {
+            currentAccountName = null;
+            accountId = -1;
+            folderModel.clear();
+            folders.clear();
+            folderKeyByDisplay.clear();
+            currentFolderDisplay = null;
+            tableModel.setRows(new ArrayList<>(), I18n.language());
+            accountHeader.setText(I18n.tr("account.none"));
+            updateStatus();
+            return;
+        }
+        loadAccount(target, all);
+    }
+
+    /** Ordner + Mails eines Kontos laden (Konto-Umschalter). */
+    private void loadAccount(String accountName, List<MailStore.StoredAccount> all) throws SQLException {
+        currentAccountName = accountName;
+        accountId = store.accountIdByName(accountName);
         folderModel.clear();
         folders.clear();
         folderKeyByDisplay.clear();
@@ -406,8 +463,26 @@ public final class MailFrame extends JFrame {
         }
         currentFolderDisplay = folderModel.isEmpty() ? null : folderModel.get(0);
         folderList.setSelectedValue(currentFolderDisplay, true);
-        accountHeader.setText(I18n.tr("account.header", "Georg Privat", "imap.strato.de"));
+        MailStore.StoredAccount acc = all == null ? null
+                : all.stream().filter(a -> a.name().equals(accountName)).findFirst().orElse(null);
+        String host = acc == null || acc.host() == null ? "-" : acc.host();
+        accountHeader.setText(I18n.tr("account.header", accountName, host));
         reloadMessages();
+    }
+
+    /** Konto-Umschalter: Wechsel lädt Ordner + Mails des gewählten Kontos. */
+    private void onAccountSelected() {
+        if (populatingAccounts) return;
+        Object sel = accountBox.getSelectedItem();
+        if (sel == null) return;
+        String name = String.valueOf(sel);
+        if (name.equals(currentAccountName)) return;
+        try {
+            loadAccount(name, store.listAccounts());
+            updateStatus();
+        } catch (SQLException e) {
+            statusLeft.setText(I18n.tr("sync.fail", name, e.getMessage()));
+        }
     }
 
     private String folderKeyFor(String dbName) {
@@ -520,7 +595,68 @@ public final class MailFrame extends JFrame {
     private void openAccountDialog() {
         String name = AccountDialog.open(this, store);
         if (name != null) {
+            currentAccountName = name;
+            try {
+                loadData();
+            } catch (SQLException e) {
+                statusLeft.setText(I18n.tr("account.err.save", e.getMessage()));
+            }
             statusLeft.setText(I18n.tr("account.saved", name));
+        }
+    }
+
+    /** Name des im Umschalter gewählten Kontos (oder null, wenn keins existiert). */
+    private String selectedAccountName() {
+        Object sel = accountBox.getSelectedItem();
+        if (sel != null) return String.valueOf(sel);
+        return currentAccountName;
+    }
+
+    /** M4-003: gewähltes Konto bearbeiten (Felder vorbefüllt, Speichern aktualisiert). */
+    private void editAccount() {
+        String name = selectedAccountName();
+        if (name == null) {
+            showInfo(I18n.tr("account.none"));
+            return;
+        }
+        try {
+            MailStore.StoredAccount acc = store.listAccounts().stream()
+                    .filter(a -> a.name().equals(name)).findFirst().orElse(null);
+            if (acc == null) {
+                statusLeft.setText(I18n.tr("account.none"));
+                return;
+            }
+            String saved = AccountDialog.openEdit(this, store, acc);
+            if (saved != null) {
+                currentAccountName = saved;
+                loadData();
+                statusLeft.setText(I18n.tr("account.saved", saved));
+            }
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, I18n.tr("account.err.save", e.getMessage()),
+                    I18n.tr("account.title.edit"), JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    /** M4-003: gewähltes Konto löschen (Rückfrage) — Ordner/Mails gehen per CASCADE mit. */
+    private void deleteAccount() {
+        String name = selectedAccountName();
+        if (name == null) {
+            showInfo(I18n.tr("account.none"));
+            return;
+        }
+        int ok = JOptionPane.showConfirmDialog(this, I18n.tr("account.delete.confirm", name),
+                I18n.tr("account.delete.title"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        if (ok != JOptionPane.YES_OPTION) return;
+        try {
+            store.deleteAccount(store.accountIdByName(name));
+            if (name.equals(currentAccountName)) currentAccountName = null;
+            loadData();
+            updateStatus();
+            statusLeft.setText(I18n.tr("account.deleted", name));
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, I18n.tr("account.err.delete", e.getMessage()),
+                    I18n.tr("account.delete.title"), JOptionPane.ERROR_MESSAGE);
         }
     }
 

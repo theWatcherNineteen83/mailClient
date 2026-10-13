@@ -228,6 +228,40 @@ public class MailStore implements AutoCloseable {
         return out;
     }
 
+    /** M4-003: bestehendes Konto aktualisieren — ID bleibt stabil, Ordner und Mails bleiben erhalten. */
+    public int updateAccount(long id, String name, String email, String protocol, String host, int port,
+                             String security, String smtpHost, int smtpPort, String smtpSecurity,
+                             String username, String password) throws SQLException {
+        String sql = """
+                UPDATE accounts SET name=?, email=?, protocol=?, host=?, port=?, security=?,
+                    smtp_host=?, smtp_port=?, smtp_security=?, username=?, password=?
+                WHERE id=?
+                """;
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, name);
+            ps.setString(2, email);
+            ps.setString(3, protocol);
+            ps.setString(4, host);
+            ps.setInt(5, port);
+            ps.setString(6, security);
+            ps.setString(7, smtpHost);
+            ps.setInt(8, smtpPort);
+            ps.setString(9, smtpSecurity);
+            ps.setString(10, username);
+            ps.setString(11, password);
+            ps.setLong(12, id);
+            return ps.executeUpdate();
+        }
+    }
+
+    /** M4-003: Konto loeschen — Ordner und Mails folgen per ON DELETE CASCADE. */
+    public int deleteAccount(long id) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement("DELETE FROM accounts WHERE id=?")) {
+            ps.setLong(1, id);
+            return ps.executeUpdate();
+        }
+    }
+
     /** Konto-Datensatz für die UI (M4-003). */
     public record StoredAccount(long id, String name, String email, String protocol,
                                 String host, int port, String security,
