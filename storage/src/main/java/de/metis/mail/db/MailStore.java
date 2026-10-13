@@ -1,6 +1,7 @@
 package de.metis.mail.db;
 
 import de.metis.mail.model.MailMessage;
+import de.metis.mail.security.AuthenticationResultsParser;
 import de.metis.mail.security.SecretProtector;
 import de.metis.mail.storage.SearchQueryBuilder;
 
@@ -40,19 +41,23 @@ import java.util.stream.Collectors;
 public class MailStore implements AutoCloseable {
 
     private static final Logger LOG = Logger.getLogger(MailStore.class.getName());
-    public static final int SCHEMA_VERSION = 2;
+    public static final int SCHEMA_VERSION = 3;
     private static final int BATCH_SIZE = 1000;
 
     private static final String UPSERT_MESSAGE_SQL = """
             INSERT INTO messages (folder_id, message_id, in_reply_to, refs,
                 from_addr, from_name, to_addrs, cc_addrs, subject, sent_date,
-                preview, body_text, body_html, spam_score, unseen, flagged)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                preview, body_text, body_html, spam_score, unseen, flagged,
+                auth_spf, auth_dkim, auth_dmarc)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(folder_id, message_id) DO UPDATE SET
                 subject = excluded.subject,
                 spam_score = excluded.spam_score,
                 unseen = excluded.unseen,
-                flagged = excluded.flagged
+                flagged = excluded.flagged,
+                auth_spf = excluded.auth_spf,
+                auth_dkim = excluded.auth_dkim,
+                auth_dmarc = excluded.auth_dmarc
             """;
 
     private static final String INSERT_ATTACHMENT_SQL = """
@@ -154,6 +159,9 @@ public class MailStore implements AutoCloseable {
                         body_text TEXT,
                         body_html TEXT,
                         spam_score INTEGER NOT NULL DEFAULT 0,
+                        auth_spf TEXT,
+                        auth_dkim TEXT,
+                        auth_dmarc TEXT,
                         unseen INTEGER NOT NULL DEFAULT 1,
                         flagged INTEGER NOT NULL DEFAULT 0,
                         deleted INTEGER NOT NULL DEFAULT 0,
@@ -169,6 +177,17 @@ public class MailStore implements AutoCloseable {
                         size INTEGER,
                         path TEXT
                     )""");
+            // Migration v2 -> v3: Authentifizierungs-Ergebnisse (SPF/DKIM/DMARC) je Mail
+            for (String col : new String[]{"auth_spf TEXT", "auth_dkim TEXT", "auth_dmarc TEXT"}) {
+                String name = col.split(" ")[0];
+                boolean present = false;
+                try (ResultSet rs = s.executeQuery("PRAGMA table_info(messages)")) {
+                    while (rs.next()) {
+                        if (name.equalsIgnoreCase(rs.getString("name"))) { present = true; break; }
+                    }
+                }
+                if (!present) s.executeUpdate("ALTER TABLE messages ADD COLUMN " + col);
+            }
             s.executeUpdate("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)");
             s.executeUpdate("CREATE INDEX IF NOT EXISTS idx_messages_folder_date ON messages(folder_id, sent_date DESC)");
             s.executeUpdate("CREATE INDEX IF NOT EXISTS idx_messages_message_id ON messages(message_id)");
@@ -177,6 +196,8 @@ public class MailStore implements AutoCloseable {
             try (ResultSet rs = s.executeQuery("SELECT COUNT(*) FROM schema_version")) {
                 if (rs.next() && rs.getInt(1) == 0) {
                     s.executeUpdate("INSERT INTO schema_version(version) VALUES (" + SCHEMA_VERSION + ")");
+                } else {
+                    s.executeUpdate("UPDATE schema_version SET version=" + SCHEMA_VERSION);
                 }
             }
         }
@@ -393,6 +414,29 @@ public class MailStore implements AutoCloseable {
         ps.setInt(14, item.spamScore());
         ps.setInt(15, m.isUnseen() ? 1 : 0);
         ps.setInt(16, m.isFlagged() ? 1 : 0);
+        String[] auth = authResultsOf(m);
+        ps.setString(17, auth[0]);
+        ps.setString(18, auth[1]);
+        ps.setString(19, auth[2]);
+    }
+
+    /** SPF/DKIM/DMARC-Status aus dem Authentication-Results-Header (M4-004). */
+    private static String[] authResultsOf(MailMessage m) {
+        String[] out = new String[]{null, null, null};
+        String header = firstHeader(m, "Authentication-Results");
+        if (header == null || header.isBlank()) {
+            return out;
+        }
+        for (AuthenticationResultsParser.AuthResult r : new AuthenticationResultsParser().parse(header)) {
+            if (r.protocol == null || r.status == null) continue;
+            switch (r.protocol.toLowerCase(java.util.Locale.ROOT)) {
+                case "spf" -> out[0] = r.status;
+                case "dkim" -> out[1] = r.status;
+                case "dmarc" -> out[2] = r.status;
+                default -> { }
+            }
+        }
+        return out;
     }
 
     private String joinAddresses(List<MailMessage.MailAddress> addrs) {
@@ -527,6 +571,20 @@ public class MailStore implements AutoCloseable {
                 return rs.next() ? mapRow(rs) : null;
             }
         }
+    }
+
+    /** SPF/DKIM/DMARC einer Mail (Index 0/1/2); fehlende Werte sind null. */
+    public String[] authResults(long id) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT auth_spf, auth_dkim, auth_dmarc FROM messages WHERE id=?")) {
+            ps.setLong(1, id);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return new String[]{rs.getString(1), rs.getString(2), rs.getString(3)};
+                }
+            }
+        }
+        return new String[]{null, null, null};
     }
 
     /** Full bodies for one message (text + html). */

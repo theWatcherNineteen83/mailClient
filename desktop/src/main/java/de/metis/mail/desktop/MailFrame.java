@@ -4,6 +4,7 @@ import de.metis.mail.db.MailStore;
 import de.metis.mail.db.StoredMessage;
 import de.metis.mail.db.SyncService;
 import de.metis.mail.security.HtmlSanitizer;
+import de.metis.mail.security.SecurityBadge;
 
 import javax.swing.*;
 import javax.swing.event.DocumentEvent;
@@ -41,6 +42,8 @@ public final class MailFrame extends JFrame {
     private final JComboBox<String> accountBox = new JComboBox<>();
     private boolean populatingAccounts;
     private String currentAccountName;
+    /** M4-004: SPF/DKIM/DMARC-Ampel ueber dem Leser. */
+    private final JLabel securityBadge = new JLabel();
     private final JLabel statusLeft = new JLabel();
     private final JLabel statusRight = new JLabel();
     private final JToolBar toolBar = new JToolBar();
@@ -285,6 +288,9 @@ public final class MailFrame extends JFrame {
         reader.setCaretColor(Theme.text());
         JScrollPane readerScroll = new JScrollPane(reader);
         readerScroll.setBorder(BorderFactory.createLineBorder(Theme.border()));
+        securityBadge.setBorder(BorderFactory.createEmptyBorder(3, 8, 3, 8));
+        securityBadge.setFont(securityBadge.getFont().deriveFont(Font.BOLD, 11f));
+        readerScroll.setColumnHeaderView(securityBadge);
 
         boolean previewMode = layout == LayoutPreset.FOXMAIL;
         messageTable.setRowHeight(previewMode ? 46 : 20);
@@ -553,6 +559,7 @@ public final class MailFrame extends JFrame {
             reader.setForeground(Theme.text());
             reader.setCaretPosition(0);
             statusRight.setText(I18n.tr("status.selected", m.subject()));
+            updateSecurityBadge(m);
             if (m.unseen()) {
                 store.setUnseen(m.id(), false);
                 reloadMessages();
@@ -732,6 +739,31 @@ public final class MailFrame extends JFrame {
             out.add(tableModel.rowAt(messageTable.convertRowIndexToModel(i)));
         }
         return out;
+    }
+
+    /** M4-004: Badge aus den gespeicherten SPF/DKIM/DMARC-Werten der Mail setzen. */
+    private void updateSecurityBadge(StoredMessage m) {
+        try {
+            String[] auth = store.authResults(m.id());
+            SecurityBadge.Level level = SecurityBadge.evaluate(auth[0], auth[1], auth[2]);
+            securityBadge.setText(" " + I18n.tr("security.badge", SecurityBadge.label(level)) + " ");
+            securityBadge.setForeground(badgeColor(level));
+            securityBadge.setToolTipText(SecurityBadge.tooltip(level, auth[0], auth[1], auth[2]));
+            securityBadge.setOpaque(true);
+            securityBadge.setBackground(Theme.header());
+        } catch (SQLException e) {
+            securityBadge.setText("");
+            securityBadge.setToolTipText(null);
+        }
+    }
+
+    private static Color badgeColor(SecurityBadge.Level level) {
+        return switch (level) {
+            case GREEN -> new Color(0x2E7D32);
+            case YELLOW -> new Color(0xB4650A);
+            case RED -> new Color(0xC62828);
+            case UNKNOWN -> new Color(0x607D8B);
+        };
     }
 
     private void updateStatus() {
