@@ -97,5 +97,5 @@
 
 1. Metis (Ziele per POST /api/usergoals angelegt, Status OFFEN): MailKeyring (AES-GCM/PBKDF2, Prio 85), SecurityBadge SPF/DKIM/DMARC (Prio 70), SearchQueryBuilder (Prio 65)
 2. Prometheus: Konto-Umschalter + Bearbeiten/Löschen per UI (M4-003 Rest), Attachment-UI (M4-006), SMTP-Versand + Anhänge (M4-007)
-3. Offen mit Georg: sudo apt install clamav-daemon → echter EICAR-Livetest gegen ClamdClient; IMAP/SMTP/POP3-Livetest gegen Strato-Postfach
+3. Offen mit Georg: sudo apt install clamav-daemon → EICAR-Livetest ERLEDIGT 13.10.2026 22:44 gegen den echten clamd (ClamAV 1.4.6/28152): PING→pong, EICAR→stream: Eicar-Test-Signature FOUND, saubere Mail→stream: OK, zweiter Scan auf derselben Verbindung→OK — ClamdClient live bestätigt; IMAP/SMTP/POP3-Livetest gegen Strato-Postfach
 4. ERLEDIGT 13.10.2026 — Repo-Hygiene: Code-Historie liegt jetzt auf `main` (Force-Push der master-Historie, CI-Trigger auf main, `master` stillgelegt; alter Orphan-Commit mit dem ungenutzten Publish-Template als Rettungsanker: f81cd6a)
