@@ -68,7 +68,7 @@ liegen als Dateien auf Disk, nur Metadaten in der DB (hält die DB schlank).
 - **M1 ✅:** IMAP, POP3, SMTP via Jakarta Mail (GreenMail-Integrationstests)
 - **M2 ✅:** Security-Tests gegen bekannte Angriffe (XSS-Korpus, Attachment-Evasion, clamd-Protokolltest)
 - **M3 ✅:** SQLite-Storage, Sync, Threading, 100K-Perf-Test
-- **M4 🟡:** Desktop-UI in **Swing** (Vorgabe 12.10.2026). Live: Shell, Layouts (Default/Thunderbird/Outlook/Gmail/Foxmail), Sprachumschaltung, Design-Menü (auto/GTK/Nimbus/Metal, plattformgefiltert), Compose/Antworten/Weiterleiten lokal, Spam-Prozentanzeige, Logo-Icon. Offen: Farbschema Hell/Dunkel/Automatisch verdrahten (Theme-Klasse steht), echte Konto-Anbindung (M4-003), Attachment-UI, SMTP-Versand, CI-Build
+- **M4 🟡:** Desktop-UI in **Swing** (Vorgabe 12.10.2026). Live: Shell, Layouts (Default/Thunderbird/Outlook/Gmail/Foxmail), Sprachumschaltung, Design-Menü (auto/GTK/Nimbus/Metal, plattformgefiltert), **Farbschema Hell/Dunkel/Automatisch (13.10.2026: verdrahtet, SQLite-persistiert, ThemeTest grün)**, Compose/Antworten/Weiterleiten lokal, Spam-Prozentanzeige, Logo-Icon, **CI-Build via GitHub Actions (seit v0.1.2-m4 grün, Release-Jar automatisch)**. Offen: echte Konto-Anbindung (M4-003), Attachment-UI, SMTP-Versand
 - **M5:** Android-UI
 
 Details: [.specify/tasks.md](.specify/tasks.md)

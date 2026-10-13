@@ -58,7 +58,7 @@
 | M4-006 | Suche + Attachments: Suchfeld (SQLite-Suche), Attachments anzeigen/öffnen/speichern | 🟡 TEILWEISE 12.10.2026: Suchfeld + Schnellfilter ✅; Attachment-UI offen | Prometheus |
 | M4-007 | Composer: Schreiben/Antworten/Antw. an alle/Weiterleiten via SMTP, Multipart + Attachments | 🟡 TEILWEISE 12.10.2026: Neu/Antwort (mit Zitat)/Weiterleitung → Gesendet-Ordner (lokal) ✅; SMTP-Versand + Anhänge offen | Prometheus |
 | M4-008 | Flags/Sync: Gelesen/Ungesehen/Flag/Soft-Delete, Sync-Status pro Account, Worker-Threads (kein IO auf EDT) | 🟡 TEILWEISE 12.10.2026: Gelesen/Flag/Soft-Delete + SwingWorker (kein IO auf EDT) ✅; Sync-Status pro Konto offen | Prometheus |
-| M4-009 | Polish: System-LAF, HiDPI, Tray (Backlog), Smoke-Tests headless | 🟡 TEILWEISE 12.10.2026: System-LAF + Design-Menü plattformgefiltert (GTK nur Linux, Windows-LAF nur Windows) + Logo-Icon ✅; Farbschema Hell/Dunkel/Automatisch in Arbeit (Theme-Klasse vorhanden, UI-Verdrahtung + ThemeTest offen); HiDPI/Tray Backlog | Prometheus |
+| M4-009 | Polish: System-LAF, HiDPI, Tray (Backlog), Smoke-Tests headless | 🟡 TEILWEISE 13.10.2026: System-LAF + Design-Menü plattformgefiltert (GTK nur Linux, Windows-LAF nur Windows) + Logo-Icon ✅; **Farbschema Hell/Dunkel/Automatisch verdrahtet** (Menü Ansicht→Farbschema, ui.theme in SQLite, Theme-Palette ersetzt Hardcodes, Dark-Reader-CSS, ThemeTest 11 Tests grün) ✅; CI: GitHub Actions grün inkl. Release-Jar ab v0.1.2-m4 (GreenMail-Tests auf unprivilegierte Loopback-Ports umgestellt) ✅; HiDPI/Tray Backlog | Prometheus |
 
 ### Phase 6: Android UI (M5)
 
