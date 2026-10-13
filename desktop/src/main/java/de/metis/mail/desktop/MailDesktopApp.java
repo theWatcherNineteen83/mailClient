@@ -20,8 +20,9 @@ import java.nio.file.Path;
 public final class MailDesktopApp {
 
     public static void main(String[] args) throws Exception {
-        Path dataDir = Path.of(System.getProperty("user.home"), "MailClient-Daten");
+        Path dataDir = AppPaths.resolveDataDir();
         Files.createDirectories(dataDir);
+        System.out.println("[MailClient] Datenordner: " + dataDir.toAbsolutePath());
         String jdbc = "jdbc:sqlite:" + dataDir.resolve("mail.sqlite");
 
         UiSettings settings = new UiSettings(jdbc);

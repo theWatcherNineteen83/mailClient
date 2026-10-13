@@ -587,6 +587,108 @@ public class MailStore implements AutoCloseable {
         return new String[]{null, null, null};
     }
 
+    /** Soft-geloeschte Mails eines Ordners (Papierkorb-Ansicht, M4-008). */
+    public List<StoredMessage> listDeleted(long folderId, int limit, int offset) throws SQLException {
+        String sql = """
+                SELECT id, folder_id, message_id, in_reply_to, refs, from_addr, from_name, to_addrs,
+                       subject, sent_date, preview, spam_score, unseen, flagged, deleted, thread_id
+                FROM messages
+                WHERE folder_id=? AND deleted=1
+                ORDER BY sent_date DESC, id DESC
+                LIMIT ? OFFSET ?
+                """;
+        List<StoredMessage> out = new ArrayList<>();
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setLong(1, folderId);
+            ps.setInt(2, limit);
+            ps.setInt(3, offset);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) out.add(mapRow(rs));
+            }
+        }
+        return out;
+    }
+
+    /** Anzahl der Mails im Papierkorb eines Ordners. */
+    public int countDeleted(long folderId) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT COUNT(*) FROM messages WHERE folder_id=? AND deleted=1")) {
+            ps.setLong(1, folderId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt(1) : 0;
+            }
+        }
+    }
+
+    /** Mail aus dem Papierkorb zurueckholen. */
+    public void restore(long id) throws SQLException {
+        setDeleted(id, false);
+    }
+
+    /**
+     * Eine Mail endgueltig loeschen: Datensatz, Anhang-Metadaten und die
+     * Anhang-Dateien auf der Platte.
+     */
+    public int purge(long id) throws SQLException {
+        List<String> files = attachmentPaths(id);
+        int removed;
+        try (PreparedStatement ps = conn.prepareStatement("DELETE FROM messages WHERE id=?")) {
+            ps.setLong(1, id);
+            removed = ps.executeUpdate();
+        }
+        deleteFiles(files);
+        return removed;
+    }
+
+    /** Papierkorb eines Ordners endgueltig leeren. */
+    public int purgeDeleted(long folderId) throws SQLException {
+        List<String> files = new ArrayList<>();
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT a.path FROM attachments a JOIN messages m ON a.message_pk = m.id"
+                        + " WHERE m.folder_id=? AND m.deleted=1")) {
+            ps.setLong(1, folderId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    if (rs.getString(1) != null) files.add(rs.getString(1));
+                }
+            }
+        }
+        int removed;
+        try (PreparedStatement ps = conn.prepareStatement(
+                "DELETE FROM messages WHERE folder_id=? AND deleted=1")) {
+            ps.setLong(1, folderId);
+            removed = ps.executeUpdate();
+        }
+        deleteFiles(files);
+        return removed;
+    }
+
+    private List<String> attachmentPaths(long messageId) throws SQLException {
+        List<String> files = new ArrayList<>();
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT path FROM attachments WHERE message_pk=?")) {
+            ps.setLong(1, messageId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    if (rs.getString(1) != null) files.add(rs.getString(1));
+                }
+            }
+        }
+        return files;
+    }
+
+    private void deleteFiles(List<String> paths) {
+        for (String path : paths) {
+            try {
+                if (attachmentsDir != null && path != null) {
+                    Files.deleteIfExists(attachmentsDir.resolve(path));
+                }
+            } catch (IOException e) {
+                LOG.log(Level.FINE, "Anhang-Datei nicht loeschbar: " + path, e);
+            }
+        }
+    }
+
     /** Full bodies for one message (text + html). */
     public String[] getBodies(long id) throws SQLException {
         try (PreparedStatement ps = conn.prepareStatement(

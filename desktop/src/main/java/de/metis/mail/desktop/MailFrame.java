@@ -51,6 +51,8 @@ public final class MailFrame extends JFrame {
     private JSplitPane lastSplitA, lastSplitB;
 
     private LayoutPreset layout;
+    /** M4-004: Vorschau-Modus — integriert (Java) oder im Standardbrowser des Systems. */
+    private String previewMode;
     private boolean groupedThreads;
     private String lookKey;
     private String themeKey;
@@ -64,6 +66,7 @@ public final class MailFrame extends JFrame {
         if (!LookFeel.isAvailable(this.lookKey)) this.lookKey = "auto";
         this.themeKey = System.getProperty("mailclient.theme", settings.get("ui.theme", Theme.AUTO));
         Theme.set(this.themeKey);
+        this.previewMode = System.getProperty("mailclient.preview", settings.get("ui.preview", "integrated"));
 
         setTitle("MailClient");
         setIconImages(loadAppIcons());
@@ -194,6 +197,8 @@ public final class MailFrame extends JFrame {
         file.add(item(I18n.tr("menu.file.deleteaccount"), this::deleteAccount));
         file.add(item(I18n.tr("menu.file.sync"), this::syncAllAccounts));
         file.addSeparator();
+        file.add(item(I18n.tr("menu.file.datadir"), this::showDataDirDialog));
+        file.addSeparator();
         file.add(item(I18n.tr("menu.file.quit"), this::dispose));
 
         JMenu edit = mb.add(new JMenu(I18n.tr("menu.edit")));
@@ -202,6 +207,8 @@ public final class MailFrame extends JFrame {
         edit.addSeparator();
         edit.add(item(I18n.tr("menu.edit.read"), this::markSelectedRead));
         edit.add(item(I18n.tr("menu.edit.delete"), this::deleteSelected));
+        edit.add(item(I18n.tr("menu.edit.restore"), this::restoreSelected));
+        edit.add(item(I18n.tr("menu.edit.emptytrash"), this::emptyTrash));
 
         JMenu view = mb.add(new JMenu(I18n.tr("menu.view")));
         JMenu layouts = new JMenu(I18n.tr("menu.view.layout"));
@@ -242,6 +249,16 @@ public final class MailFrame extends JFrame {
             lookGroup.add(m);
             looks.add(m);
         }
+        JMenu previews = new JMenu(I18n.tr("menu.view.preview"));
+        view.add(previews);
+        ButtonGroup previewGroup = new ButtonGroup();
+        for (String key : new String[]{"integrated", "browser"}) {
+            JRadioButtonMenuItem m = new JRadioButtonMenuItem(I18n.tr("preview." + key), key.equals(previewMode));
+            m.addActionListener(e -> switchPreviewMode(key));
+            previewGroup.add(m);
+            previews.add(m);
+        }
+        view.add(item(I18n.tr("menu.view.openbrowser"), this::openSelectedInBrowser));
         view.addSeparator();
         JCheckBoxMenuItem thr = new JCheckBoxMenuItem(I18n.tr("menu.view.threads"), groupedThreads);
         thr.addActionListener(e -> {
@@ -456,6 +473,10 @@ public final class MailFrame extends JFrame {
     private void loadAccount(String accountName, List<MailStore.StoredAccount> all) throws SQLException {
         currentAccountName = accountName;
         accountId = store.accountIdByName(accountName);
+        // Standard-Ordner sicherstellen — auch fuer Demo- und Bestandskonten (M4-008)
+        for (String folder : new String[]{"Posteingang", "Gesendet", "Archiv", "Papierkorb"}) {
+            store.getOrCreateFolder(accountId, folder);
+        }
         folderModel.clear();
         folders.clear();
         folderKeyByDisplay.clear();
@@ -515,11 +536,25 @@ public final class MailFrame extends JFrame {
         if (folderId == null) return;
         try {
             // Suche laeuft in SQL (Platzhalter + Parameter ueber SearchQueryBuilder),
-            // inklusive Feld-Praefixen from: / subject: / has:attachment
+            // inklusive Feld-Praefixen from: / subject: / has:attachment.
+            // Im Papierkorb zeigen wir die soft-geloeschten Mails (M4-008).
             String q = effectiveQuery();
-            List<StoredMessage> rows = q.isBlank()
-                    ? store.listMessages(folderId, 500, 0)
-                    : store.search(folderId, q, 500);
+            List<StoredMessage> rows;
+            if (isTrashSelected()) {
+                rows = store.listDeleted(folderId, 500, 0);
+                if (!q.isBlank()) {
+                    String needle = q.toLowerCase(Locale.ROOT);
+                    rows = rows.stream().filter(m ->
+                            (m.subject() != null && m.subject().toLowerCase(Locale.ROOT).contains(needle))
+                                    || (m.fromName() != null && m.fromName().toLowerCase(Locale.ROOT).contains(needle))
+                                    || (m.fromAddr() != null && m.fromAddr().toLowerCase(Locale.ROOT).contains(needle)))
+                            .toList();
+                }
+            } else {
+                rows = q.isBlank()
+                        ? store.listMessages(folderId, 500, 0)
+                        : store.search(folderId, q, 500);
+            }
             if (groupedThreads) {
                 rows = new ArrayList<>(rows);
                 rows.sort(Comparator.comparing((StoredMessage m) -> m.threadId() == null ? m.id() : m.threadId())
@@ -551,6 +586,9 @@ public final class MailFrame extends JFrame {
                 String clean = sanitizer.sanitize(html);
                 String css = Theme.readerCss();
                 reader.setText(css.isEmpty() ? clean : "<style>" + css + "</style>" + clean);
+                if ("browser".equals(previewMode)) {
+                    openPreviewInBrowser(clean);
+                }
             } else {
                 reader.setContentType("text/plain");
                 reader.setText((text == null ? "" : text) + "\n\n— Vorschau: " + m.preview());
@@ -698,9 +736,19 @@ public final class MailFrame extends JFrame {
             statusRight.setText(I18n.tr("status.noselection"));
             return;
         }
+        boolean inTrash = isTrashSelected();
+        if (inTrash) {
+            int ok = JOptionPane.showConfirmDialog(this, I18n.tr("delete.confirm", m.subject()),
+                    I18n.tr("delete.confirm.title"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+            if (ok != JOptionPane.YES_OPTION) return;
+        }
         new SwingWorker<Void, Void>() {
             @Override protected Void doInBackground() throws Exception {
-                store.setDeleted(m.id(), true);
+                if (inTrash) {
+                    store.purge(m.id());
+                } else {
+                    store.setDeleted(m.id(), true);
+                }
                 return null;
             }
             @Override protected void done() {
@@ -710,7 +758,9 @@ public final class MailFrame extends JFrame {
                             e.getMessage(), I18n.tr("toolbar.delete"), JOptionPane.ERROR_MESSAGE);
                     return;
                 }
-                statusLeft.setText(I18n.tr("status.deleted", m.subject()));
+                statusLeft.setText(inTrash
+                        ? I18n.tr("status.purged", m.subject())
+                        : I18n.tr("status.deleted", m.subject()));
                 reloadMessages();
             }
         }.execute();
@@ -730,6 +780,156 @@ public final class MailFrame extends JFrame {
             }
             setToolTipText(I18n.tr("col.spam.tip"));
             return this;
+        }
+    }
+
+    /** M4: Ablageort der Daten waehlen (portabel neben dem Jar oder im Benutzerprofil). */
+    private void showDataDirDialog() {
+        AppPaths.Env env = AppPaths.systemEnv();
+        java.nio.file.Path current = AppPaths.resolveDataDir();
+        String info = I18n.tr("datadir.current", current.toAbsolutePath().toString())
+                + "\n\n" + I18n.tr("datadir.hint");
+        Object[] options = {
+                I18n.tr("datadir.portable"),
+                I18n.tr("datadir.user"),
+                I18n.tr("datadir.custom"),
+                I18n.tr("datadir.open"),
+                I18n.tr("account.cancel")
+        };
+        int choice = JOptionPane.showOptionDialog(this, info, I18n.tr("datadir.title"),
+                JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, options, options[4]);
+        try {
+            switch (choice) {
+                case 0 -> {
+                    AppPaths.writeMode(env, AppPaths.MODE_PORTABLE);
+                    dataDirNote(AppPaths.portableDir(env));
+                }
+                case 1 -> {
+                    AppPaths.writeMode(env, AppPaths.MODE_USER);
+                    dataDirNote(AppPaths.userDir(env));
+                }
+                case 2 -> {
+                    JFileChooser chooser = new JFileChooser();
+                    chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+                    chooser.setDialogTitle(I18n.tr("datadir.custom"));
+                    if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+                        java.nio.file.Path chosen = chooser.getSelectedFile().toPath().toAbsolutePath();
+                        AppPaths.writeMode(env, chosen.toString());
+                        dataDirNote(chosen);
+                    }
+                }
+                case 3 -> {
+                    if (Desktop.isDesktopSupported()) {
+                        Desktop.getDesktop().open(current.toFile());
+                    } else {
+                        statusLeft.setText(I18n.tr("preview.failed", "Desktop nicht verfuegbar"));
+                    }
+                }
+                default -> { }
+            }
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, I18n.tr("datadir.err", String.valueOf(e.getMessage())),
+                    I18n.tr("datadir.title"), JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void dataDirNote(java.nio.file.Path target) {
+        JOptionPane.showMessageDialog(this,
+                I18n.tr("datadir.saved", target.toAbsolutePath().toString()),
+                I18n.tr("datadir.title"), JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    /** M4-004: Vorschau-Modus umschalten (integriert / Standardbrowser), persistiert. */
+    private void switchPreviewMode(String key) {
+        this.previewMode = key;
+        settings.put("ui.preview", key);
+        statusLeft.setText(I18n.tr("preview." + key));
+        StoredMessage m = selectedMessage();
+        if (m != null) {
+            onMessageSelected();
+        }
+    }
+
+    /** Schreibt die sanitisierte Mail in eine temporaere Datei und oeffnet sie im Systembrowser. */
+    private void openPreviewInBrowser(String sanitizedHtml) {
+        try {
+            var file = PreviewExport.inTempDir().write(sanitizedHtml);
+            PreviewExport.openInBrowser(file);
+            statusLeft.setText(I18n.tr("preview.opened", file.getFileName().toString()));
+        } catch (Exception e) {
+            statusLeft.setText(I18n.tr("preview.failed", String.valueOf(e.getMessage())));
+        }
+    }
+
+    /** Menueaktion: ausgewaehlte Mail bewusst im Systembrowser zeigen. */
+    private void openSelectedInBrowser() {
+        StoredMessage m = selectedMessage();
+        if (m == null) {
+            statusRight.setText(I18n.tr("status.noselection"));
+            return;
+        }
+        try {
+            String[] bodies = store.getBodies(m.id());
+            String html = bodies != null ? bodies[1] : null;
+            String content = html != null && !html.isBlank()
+                    ? sanitizer.sanitize(html)
+                    : "<pre>" + escapeHtml(bodies != null ? bodies[0] : "") + "</pre>";
+            openPreviewInBrowser(content);
+        } catch (SQLException e) {
+            statusLeft.setText(I18n.tr("preview.failed", String.valueOf(e.getMessage())));
+        }
+    }
+
+    private static String escapeHtml(String text) {
+        return text == null ? "" : text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
+    /** true, wenn der aktuell gewaehlte Ordner der Papierkorb ist. */
+    private boolean isTrashSelected() {
+        return "folder.trash".equals(folderKeyByDisplay.get(currentFolderDisplay));
+    }
+
+    /** M4-008: Mail aus dem Papierkorb zurueckholen. */
+    private void restoreSelected() {
+        StoredMessage m = selectedMessage();
+        if (m == null) {
+            statusRight.setText(I18n.tr("status.noselection"));
+            return;
+        }
+        if (!isTrashSelected()) {
+            statusLeft.setText(I18n.tr("status.nottrash"));
+            return;
+        }
+        try {
+            store.restore(m.id());
+            statusLeft.setText(I18n.tr("status.restored", m.subject()));
+            reloadMessages();
+        } catch (SQLException e) {
+            statusLeft.setText(I18n.tr("sync.fail", m.subject(), e.getMessage()));
+        }
+    }
+
+    /** M4-008: Papierkorb des aktuellen Kontos endgueltig leeren. */
+    private void emptyTrash() {
+        Long folderId = currentFolderDisplay == null ? null : folders.get(currentFolderDisplay);
+        if (folderId == null || !isTrashSelected()) {
+            statusLeft.setText(I18n.tr("status.nottrash"));
+            return;
+        }
+        try {
+            int pending = store.countDeleted(folderId);
+            if (pending == 0) {
+                statusLeft.setText(I18n.tr("trash.empty.none"));
+                return;
+            }
+            int ok = JOptionPane.showConfirmDialog(this, I18n.tr("trash.empty.confirm", pending),
+                    I18n.tr("trash.empty.title"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+            if (ok != JOptionPane.YES_OPTION) return;
+            int removed = store.purgeDeleted(folderId);
+            statusLeft.setText(I18n.tr("status.trash.emptied", removed));
+            reloadMessages();
+        } catch (SQLException e) {
+            statusLeft.setText(I18n.tr("sync.fail", "-", e.getMessage()));
         }
     }
 
