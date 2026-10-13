@@ -38,7 +38,7 @@ import java.util.stream.Collectors;
 public class MailStore implements AutoCloseable {
 
     private static final Logger LOG = Logger.getLogger(MailStore.class.getName());
-    public static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 2;
     private static final int BATCH_SIZE = 1000;
 
     private static final String UPSERT_MESSAGE_SQL = """
@@ -101,8 +101,24 @@ public class MailStore implements AutoCloseable {
                         smtp_host TEXT,
                         smtp_port INTEGER,
                         username TEXT,
+                        email TEXT,
+                        password TEXT,
+                        security TEXT NOT NULL DEFAULT 'ssl',
+                        smtp_security TEXT NOT NULL DEFAULT 'ssl',
                         created_at TEXT NOT NULL DEFAULT (datetime('now'))
                     )""");
+            // Migration v1 -> v2: fehlende Spalten an bestehenden accounts-Tabellen ergänzen
+            for (String col : new String[]{"email TEXT", "password TEXT",
+                    "security TEXT NOT NULL DEFAULT 'ssl'", "smtp_security TEXT NOT NULL DEFAULT 'ssl'"}) {
+                String name = col.split(" ")[0];
+                boolean present = false;
+                try (ResultSet rs = s.executeQuery("PRAGMA table_info(accounts)")) {
+                    while (rs.next()) {
+                        if (name.equalsIgnoreCase(rs.getString("name"))) { present = true; break; }
+                    }
+                }
+                if (!present) s.executeUpdate("ALTER TABLE accounts ADD COLUMN " + col);
+            }
             s.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS folders (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -161,25 +177,62 @@ public class MailStore implements AutoCloseable {
 
     public long createAccount(String name, String protocol, String host, int port,
                               String smtpHost, int smtpPort, String username) throws SQLException {
+        return createAccount(name, null, protocol, host, port, "ssl", smtpHost, smtpPort, "ssl", username, null);
+    }
+
+    /**
+     * M4-003 (vollständig): Konto mit allen Verbindungsdaten anlegen/aktualisieren.
+     * Hinweis: Das Passwort liegt aktuell KLARTEXT in SQLite — Keyring/VS-Ablage folgt.
+     */
+    public long createAccount(String name, String email, String protocol, String host, int port,
+                              String security, String smtpHost, int smtpPort, String smtpSecurity,
+                              String username, String password) throws SQLException {
         String sql = """
-                INSERT INTO accounts (name, protocol, host, port, smtp_host, smtp_port, username)
-                VALUES (?,?,?,?,?,?,?)
+                INSERT INTO accounts (name, email, protocol, host, port, security,
+                    smtp_host, smtp_port, smtp_security, username, password)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(name) DO UPDATE SET
-                    protocol=excluded.protocol, host=excluded.host, port=excluded.port,
-                    smtp_host=excluded.smtp_host, smtp_port=excluded.smtp_port, username=excluded.username
+                    email=excluded.email, protocol=excluded.protocol, host=excluded.host, port=excluded.port,
+                    security=excluded.security, smtp_host=excluded.smtp_host, smtp_port=excluded.smtp_port,
+                    smtp_security=excluded.smtp_security, username=excluded.username, password=excluded.password
                 """;
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, name);
-            ps.setString(2, protocol);
-            ps.setString(3, host);
-            ps.setInt(4, port);
-            ps.setString(5, smtpHost);
-            ps.setInt(6, smtpPort);
-            ps.setString(7, username);
+            ps.setString(2, email);
+            ps.setString(3, protocol);
+            ps.setString(4, host);
+            ps.setInt(5, port);
+            ps.setString(6, security);
+            ps.setString(7, smtpHost);
+            ps.setInt(8, smtpPort);
+            ps.setString(9, smtpSecurity);
+            ps.setString(10, username);
+            ps.setString(11, password);
             ps.executeUpdate();
         }
         return accountIdByName(name);
     }
+
+    /** Alle Konten inkl. Verbindungsdaten (Reihenfolge: Anlage). */
+    public List<StoredAccount> listAccounts() throws SQLException {
+        List<StoredAccount> out = new ArrayList<>();
+        try (Statement s = conn.createStatement();
+             ResultSet rs = s.executeQuery(
+                     "SELECT id,name,email,protocol,host,port,security,smtp_host,smtp_port,smtp_security,username,password FROM accounts ORDER BY id")) {
+            while (rs.next()) {
+                out.add(new StoredAccount(rs.getLong(1), rs.getString(2), rs.getString(3),
+                        rs.getString(4), rs.getString(5), rs.getInt(6), rs.getString(7),
+                        rs.getString(8), rs.getInt(9), rs.getString(10), rs.getString(11), rs.getString(12)));
+            }
+        }
+        return out;
+    }
+
+    /** Konto-Datensatz für die UI (M4-003). */
+    public record StoredAccount(long id, String name, String email, String protocol,
+                                String host, int port, String security,
+                                String smtpHost, int smtpPort, String smtpSecurity,
+                                String username, String password) { }
 
     public long accountIdByName(String name) throws SQLException {
         try (PreparedStatement ps = conn.prepareStatement("SELECT id FROM accounts WHERE name=?")) {

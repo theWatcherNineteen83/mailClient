@@ -6,6 +6,8 @@ plugins {
 dependencies {
     implementation project(':core')
     implementation project(':storage')
+    // Konto-Anlage-Dialog (M4-003): Verbindungstest gegen echte IMAP/POP3/SMTP-Server
+    implementation project(':protocol')
     runtimeOnly 'org.xerial:sqlite-jdbc:3.46.1.3'
 
     testImplementation platform('org.junit:junit-bom:5.10.2')
@@ -23,6 +25,9 @@ tasks.register('fatJar', Jar) {
     archiveBaseName = 'MailClient'
     archiveVersion = '0.1.0'
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    // Explizite Task-Abhängigkeit: runtimeClasspath enthält Projekt-Jars (core/storage/protocol),
+    // sonst validiert Gradle bei `build fatJar` in einem Lauf eine implizite Abhängigkeit weg.
+    dependsOn configurations.runtimeClasspath
     manifest { attributes 'Main-Class': 'de.metis.mail.desktop.MailDesktopApp' }
     from sourceSets.main.output
     from {

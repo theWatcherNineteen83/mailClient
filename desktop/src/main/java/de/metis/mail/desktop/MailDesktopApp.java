@@ -59,20 +59,23 @@ public final class MailDesktopApp {
                     frame.selectFirstMessage();
                     Timer t2 = new Timer(1400, e2 -> {
                         String compose = System.getProperty("mailclient.compose");
-                        if (compose == null) {
+                        String dialog = System.getProperty("mailclient.dialog");
+                        if (compose == null && dialog == null) {
                             grab(frame, shot);
                             System.exit(0);
                         }
                         // Timer für den Dialog-Schuss VOR dem modalen Öffnen starten
                         // (modale Dialoge blockieren den aufrufenden Code, Timer laufen auf der EDT weiter).
+                        String suffix = compose != null ? compose : dialog;
                         Timer t3 = new Timer(3000, e3 -> {
-                            grab(frame, shot.replace(".png", "_" + compose + ".png"));
+                            grab(frame, shot.replace(".png", "_" + suffix + ".png"));
                             System.exit(0);
                         });
                         t3.setRepeats(false);
                         t3.start();
                         grab(frame, shot);
-                        frame.triggerCompose(compose);
+                        if (compose != null) frame.triggerCompose(compose);
+                        else frame.triggerAccountDialog();
                     });
                     t2.setRepeats(false);
                     t2.start();

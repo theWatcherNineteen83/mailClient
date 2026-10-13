@@ -173,6 +173,7 @@ public final class MailFrame extends JFrame {
 
         JMenu file = mb.add(new JMenu(I18n.tr("menu.file")));
         file.add(item(I18n.tr("menu.file.new"), this::openCompose));
+        file.add(item(I18n.tr("menu.file.addaccount"), this::openAccountDialog));
         file.add(item(I18n.tr("menu.file.sync"), () -> showInfo(I18n.tr("menu.file.sync"))));
         file.addSeparator();
         file.add(item(I18n.tr("menu.file.quit"), this::dispose));
@@ -514,6 +515,14 @@ public final class MailFrame extends JFrame {
         ComposeDialog.openNew(this, store, sentFolderId(), this::reloadMessages);
     }
 
+    /** M4-003: Konto-Eingabemaske öffnen; nach Speichern Statusmeldung. */
+    private void openAccountDialog() {
+        String name = AccountDialog.open(this, store);
+        if (name != null) {
+            statusLeft.setText(I18n.tr("account.saved", name));
+        }
+    }
+
     private void replyToSelected() {
         withBodyOfSelected((m, body) ->
                 ComposeDialog.openReply(this, store, sentFolderId(), m, body, this::reloadMessages));
@@ -646,6 +655,11 @@ public final class MailFrame extends JFrame {
             case "forward" -> forwardSelected();
             default -> openCompose();
         }
+    }
+
+    /** Für Screenshot-Läufe: Konto-Dialog öffnen (modal, Timer für Shot vorher starten). */
+    public void triggerAccountDialog() {
+        openAccountDialog();
     }
 
     /** Für Screenshot-Läufe: Layout + Sprache von außen setzen. */

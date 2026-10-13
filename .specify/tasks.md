@@ -52,7 +52,7 @@
 |---|---|---|---|
 | M4-001 | Swing-UI-Shell: Hauptfenster, Menü, neues Modul `desktop/` | ✅ FERTIG 12.10.2026 | Prometheus |
 | M4-002 | Pluggables Layout-System: `MailUILayout`-Interface + Presets Default/Thunderbird/Outlook/Gmail (+Foxmail), zur Laufzeit tauschbar, Wahl persistiert | ✅ FERTIG 12.10.2026 | Prometheus |
-| M4-003 | Account-Verwaltung per UI: mehrere Konten (IMAP/POP3+SMTP), CRUD, Test-Login, Passwörter verschlüsselt gespeichert | ⏳ PENDING (Shell läuft mit Demo-Datensatz) | Prometheus |
+| M4-003 | Account-Verwaltung per UI: mehrere Konten (IMAP/POP3+SMTP), CRUD, Test-Login, Passwörter verschlüsselt gespeichert | 🟡 TEILWEISE 13.10.2026: **Anlage-Maske fertig** (Datei→E-Mail-Konto anlegen: Name, E-Mail, IMAP/POP3, Server/Port/Verschlüsselung Empfang+SMTP, Benutzer, Kennwort, Standard-Ports automatisch, Strato-Preset, Verbindungstest live, SQLite-Persistenz Schema v2 inkl. v1-Migration, AccountSchemaTest 4 Tests grün) ✅; offen: Konten-Bearbeiten/Löschen per UI, Konto-Umschalter, echter Sync ins Postfach, Passwort-Verschlüsselung (aktuell Klartext in SQLite — Keyring folgt) | Prometheus |
 | M4-004 | Mail-Liste + Lesebereich: Sortierung, Paging, HTML saniert via JEditorPane, Header + SPF/DKIM/DMARC-Badge, Spam-Ampel | 🟡 TEILWEISE 12.10.2026: Liste/Leser/sanitiertes HTML/Spam-Ampel als Prozent (0-100, Schwellen 30/60) ✅; SPF/DKIM-Badge + Paging-UI offen | Prometheus |
 | M4-005 | Threading als Option: flache Liste ↔ Konversations-Gruppierung umschaltbar (Backend: MessageThreader/thread_id) | ✅ FERTIG 12.10.2026 | Prometheus |
 | M4-006 | Suche + Attachments: Suchfeld (SQLite-Suche), Attachments anzeigen/öffnen/speichern | 🟡 TEILWEISE 12.10.2026: Suchfeld + Schnellfilter ✅; Attachment-UI offen | Prometheus |
