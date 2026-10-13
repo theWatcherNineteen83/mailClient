@@ -7,7 +7,7 @@
 
 ## What and Why
 
-Build a privacy-focused, modular email client in Java that supports both desktop (JavaFX) and mobile (Android) with a shared headless core. The client prioritizes local processing (offline-first), strict security (HTML sanitization, SPF/DKIM/DMARC analysis, attachment policy), and loose coupling of optional features (ClamAV virus scanning via TCP, libpst import via CLI).
+Build a privacy-focused, modular email client in Java that supports both desktop (Swing; Entscheidung 12.10.2026, siehe spec-ui.md) and mobile (Android) with a shared headless core. The client prioritizes local processing (offline-first), strict security (HTML sanitization, SPF/DKIM/DMARC analysis, attachment policy), and loose coupling of optional features (ClamAV virus scanning via TCP, libpst import via CLI).
 
 The target user is a privacy-conscious individual (1-3 email accounts) who wants a lightweight, extensible client without vendor lock-in or forced online connectivity.
 
@@ -30,7 +30,12 @@ The target user is a privacy-conscious individual (1-3 email accounts) who wants
 - Attachment policy engine (block dangerous types like .exe, .bat)
 - SPF/DKIM/DMARC header analysis and display
 - Local heuristic spam scoring (no cloud service)
-- Optional ClamAV integration for attachment virus scanning
+- Optional ClamAV integration for attachment virus scanning (live gegen echtes clamd verifiziert, 13.10.2026)
+- Passwörter verschlüsselt at rest (AES-256-GCM + PBKDF2, Keyring-Datei mit Rechten 0600)
+- Papierkorb-Semantik: Löschen verschiebt in den Papierkorb, Wiederherstellen möglich, endgültiges
+  Löschen (einzeln oder Papierkorb leeren) entfernt auch die Anhang-Dateien
+- Browser-Vorschau mit restriktiver Content-Security-Policy (keine entfernten Inhalte, kein Tracking)
+- Ablageort der Daten wählbar: portabel neben dem Jar oder im Benutzerprofil des Betriebssystems
 
 ### Performance Requirements
 - Handle large mailboxes (100K+ messages) without performance degradation
@@ -68,7 +73,7 @@ As a user, I want emails to be automatically classified as spam or ham so that m
 
 ### US-5: Security Analysis
 As a user, I want to see SPF/DKIM/DMARC status on each email so that I can verify sender authenticity.
-- **Acceptance:** Status icons shown in message list and detailed header view
+- **Acceptance:** Ampel/Badge im Lesebereich (GREEN/YELLOW/RED/UNKNOWN) inkl. Tooltip je Teilcheck — umgesetzt 13.10.2026 (Schema v3: auth_spf/auth_dkim/auth_dmarc je Mail)
 
 ### US-6: Attachment Handling
 As a user, I want dangerous attachment types to be blocked or warned about so that I stay safe.
@@ -77,5 +82,5 @@ As a user, I want dangerous attachment types to be blocked or warned about so th
 ## Non-Goals
 - Web login (no OAuth, no Google/Microsoft account integration)
 - Business complexity (no mailing lists, shared mailboxes)
-- POP3 protocol (initially)
+- (POP3 ist seit M1 umgesetzt und daher kein Non-Goal mehr)
 - Real-time chat or push notifications

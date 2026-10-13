@@ -13,8 +13,8 @@ The client follows a layered architecture with clear separation between the core
 ┌──────────────────────────────────────────────────────────┐
 │                     UI Shells                            │
 │  ┌─────────────────┐       ┌────────────────────────┐    │
-│  │ JavaFX Desktop  │       │   Android UI Shell     │    │
-│  │ (GPL-2.0)       │       │   (Apache-2.0)         │    │
+│  │ Swing Desktop   │       │   Android UI Shell     │    │
+│  │ (JDK-Bordmittel)│       │   (Apache-2.0)         │    │
 │  └────────┬────────┘       └───────────┬────────────┘    │
 └───────────┼───────────────────────────────┼──────────────┘
             │ Java SPI / ServiceLoader      │
@@ -60,7 +60,7 @@ The client follows a layered architecture with clear separation between the core
 | modules/spam-clamav | core |
 | modules/attachment | core, core/security |
 | modules/export-eml-mbox | core |
-| shell-desktop-javafx | core, all modules |
+| desktop (Swing) | core, protocol, storage |
 | shell-android | core, all modules |
 
 ## Build System
@@ -87,7 +87,7 @@ mailclient/
 │   │   └── build.gradle
 │   └── export-eml-mbox/
 │       └── build.gradle
-├── shell-desktop-javafx/
+├── desktop/
 │   └── build.gradle
 └── shell-android/
     └── build.gradle
@@ -164,7 +164,7 @@ Every module must pass these stages before being considered complete:
 - Optimize for large mailboxes
 
 ### Phase 5: Desktop UI (M4)
-- Implement JavaFX UI shell
+- Implement Swing UI shell (Entscheidung 12.10.2026)
 - Connect UI to core modules
 - Polish desktop experience
 

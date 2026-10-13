@@ -65,3 +65,50 @@ Stand: 12.10.2026, ausformuliert von Georg, niedergeschrieben von Prometheus.
   keine blockierenden IO-Aufrufe im EDT.
 - Jede Layout-/Feature-Einheit mit Tests (Kopfbereiche: Model-Bindung, Preset-Logik),
   UI-Smoke-Tests headless wo möglich.
+
+## 8. Umsetzungsstand (13.10.2026)
+
+Erledigt: Swing-Shell mit 5 Layout-Presets (inkl. Foxmail), Sprachumschaltung DE/EN,
+Design-Menü (plattformgefiltert), Farbschema Hell/Dunkel/Automatisch (SQLite-persistiert),
+Konten-Verwaltung (Anlegen mit Strato-Preset + Live-Verbindungstest, **Bearbeiten/Löschen**,
+**Konto-Umschalter** in der Toolbar), **echter IMAP/POP3-Sync** mit Statuszeilen-Feedback,
+**Papierkorb** (Löschen → Papierkorb, Wiederherstellen, endgültig löschen, Papierkorb leeren),
+**Suche in SQL** mit Feld-Präfixen (`from:`, `subject:`, `has:attachment:`),
+**SPF/DKIM/DMARC-Ampel** im Leser, **Vorschau wahlweise integriert (JEditorPane) oder im
+Standardbrowser des Systems**, **wählbarer Ablageort**, Threading-Umschaltung, Spam-Prozent-Ampel,
+Icon/Logo.
+
+Offen (Backlog M4): SMTP-Versand (M4-007), Attachment-UI öffnen/speichern (M4-006), Paging-UI,
+HiDPI/Tray, Flag- und Lösch-Sync zum IMAP-Server.
+
+### 8.1 Vorschau im Systembrowser (Implementierungsdetail)
+
+`PreviewExport` schreibt das bereits sanitisierte HTML als UTF-8-Datei mit
+`Content-Security-Policy: default-src 'none'; img-src data:; style-src 'unsafe-inline'`
+und übergibt sie an `Desktop.browse`. Damit lädt der Browser **keine entfernten Bilder oder
+Skripte** nach (kein Tracking-Pixel beim reinen Ansehen). Ist kein Desktop/Browser verfügbar,
+bleibt die integrierte Ansicht aktiv und die Statuszeile meldet den Grund.
+
+Menü: **Ansicht → Vorschau öffnen mit** (Integriert / Standardbrowser, in SQLite persistiert) sowie
+**Ansicht → Ausgewählte Mail im Browser öffnen** für den Einzelfall.
+
+### 8.2 Ablageort (Implementierungsdetail)
+
+`AppPaths.resolveDataDir()` löst in dieser Reihenfolge auf:
+
+1. `-Dmailclient.data=<Pfad>`
+2. `location.txt` im Benutzerprofil (vom Menü geschrieben: `portable`, `user` oder ein Pfad)
+3. Marker `portable.txt` neben dem Jar
+4. bestehendes `~/MailClient-Daten` (Abwärtskompatibilität)
+5. OS-Standard (Windows `%APPDATA%\MailClient`, macOS `~/Library/Application Support/MailClient`,
+   Linux `~/.local/share/mailclient`)
+
+Menü: **Datei → Datenordner…** (Portabel / Benutzerverzeichnis / eigener Ordner / Ordner öffnen).
+Der Start gibt den benutzten Ordner auf der Konsole aus; Änderungen greifen nach einem Neustart.
+
+### 8.3 Papierkorb (Implementierungsdetail)
+
+`MailStore` bietet `listDeleted`/`countDeleted` (Papierkorb-Ansicht), `restore`,
+`purge` (endgültig, inklusive Anhang-Dateien von der Platte) und `purgeDeleted`
+(Papierkorb leeren). Die vier Standard-Ordner werden für jedes Konto sichergestellt.
+⚠️ Grenze: Das Löschen wirkt **lokal** — der IMAP-Server wird (noch) nicht informiert.
