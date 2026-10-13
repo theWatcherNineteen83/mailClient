@@ -1,6 +1,7 @@
 package de.metis.mail.desktop;
 
 import de.metis.mail.db.MailStore;
+import de.metis.mail.security.KeyringFileProtector;
 
 import javax.swing.*;
 import java.awt.*;
@@ -38,6 +39,8 @@ public final class MailDesktopApp {
                 System.getProperty("mailclient.layout", settings.get("ui.layout", "DEFAULT")));
 
         MailStore store = new MailStore(jdbc, dataDir.resolve("attachments"));
+        // M4-003: Konto-Passwoerter verschluesselt ablegen (Keyring-Datei neben der DB, Rechte 0600)
+        store.setSecretProtector(new KeyringFileProtector(dataDir.resolve("keyring.key")));
         try {
             store.accountIdByName("Georg Privat");
         } catch (Exception noAccount) {

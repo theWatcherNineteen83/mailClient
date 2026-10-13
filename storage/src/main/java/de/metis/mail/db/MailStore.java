@@ -1,6 +1,8 @@
 package de.metis.mail.db;
 
 import de.metis.mail.model.MailMessage;
+import de.metis.mail.security.SecretProtector;
+import de.metis.mail.storage.SearchQueryBuilder;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -60,6 +62,14 @@ public class MailStore implements AutoCloseable {
 
     private final Connection conn;
     private final Path attachmentsDir; // nullable: metadata-only mode
+
+    /** Optionaler Schutz fuer Passwoerter in der Ablage (M4-003: Keyring). */
+    private SecretProtector protector = SecretProtector.NONE;
+
+    /** Installiert den Schutz fuer Konto-Passwoerter (z. B. KeyringFileProtector). */
+    public void setSecretProtector(SecretProtector protector) {
+        this.protector = protector == null ? SecretProtector.NONE : protector;
+    }
 
     /**
      * Open (and initialize) a store backed by a SQLite file.
@@ -207,7 +217,7 @@ public class MailStore implements AutoCloseable {
             ps.setInt(8, smtpPort);
             ps.setString(9, smtpSecurity);
             ps.setString(10, username);
-            ps.setString(11, password);
+            ps.setString(11, protector.protect(password));
             ps.executeUpdate();
         }
         return accountIdByName(name);
@@ -222,7 +232,8 @@ public class MailStore implements AutoCloseable {
             while (rs.next()) {
                 out.add(new StoredAccount(rs.getLong(1), rs.getString(2), rs.getString(3),
                         rs.getString(4), rs.getString(5), rs.getInt(6), rs.getString(7),
-                        rs.getString(8), rs.getInt(9), rs.getString(10), rs.getString(11), rs.getString(12)));
+                        rs.getString(8), rs.getInt(9), rs.getString(10), rs.getString(11),
+                        protector.reveal(rs.getString(12))));
             }
         }
         return out;
@@ -248,7 +259,7 @@ public class MailStore implements AutoCloseable {
             ps.setInt(8, smtpPort);
             ps.setString(9, smtpSecurity);
             ps.setString(10, username);
-            ps.setString(11, password);
+            ps.setString(11, protector.protect(password));
             ps.setLong(12, id);
             return ps.executeUpdate();
         }
@@ -530,23 +541,28 @@ public class MailStore implements AutoCloseable {
         return null;
     }
 
+    /**
+     * Suche im Ordner. Der WHERE-Teil kommt aus {@link SearchQueryBuilder}: Feld-Praefixe
+     * (from:, subject:, has:attachment) und Volltext, immer als Platzhalter + Parameter.
+     */
     public List<StoredMessage> search(long folderId, String query, int limit) throws SQLException {
+        SearchQueryBuilder.SearchQuery q = new SearchQueryBuilder().build(query);
         String sql = """
                 SELECT id, folder_id, message_id, in_reply_to, refs, from_addr, from_name, to_addrs,
                        subject, sent_date, preview, spam_score, unseen, flagged, deleted, thread_id
                 FROM messages
-                WHERE folder_id=? AND deleted=0
-                  AND (subject LIKE ? ESCAPE '\\' OR from_addr LIKE ? ESCAPE '\\' OR preview LIKE ? ESCAPE '\\')
+                WHERE folder_id=? AND deleted=0 AND (""" + q.sql() + """
+                )
                 ORDER BY sent_date DESC LIMIT ?
                 """;
-        String like = "%" + escapeLike(query) + "%";
         List<StoredMessage> out = new ArrayList<>();
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setLong(1, folderId);
-            ps.setString(2, like);
-            ps.setString(3, like);
-            ps.setString(4, like);
-            ps.setInt(5, limit);
+            int i = 1;
+            ps.setLong(i++, folderId);
+            for (String param : q.parameters()) {
+                ps.setString(i++, param);
+            }
+            ps.setInt(i, limit);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) out.add(mapRow(rs));
             }

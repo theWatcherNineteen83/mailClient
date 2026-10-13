@@ -508,17 +508,12 @@ public final class MailFrame extends JFrame {
         Long folderId = currentFolderDisplay == null ? null : folders.get(currentFolderDisplay);
         if (folderId == null) return;
         try {
-            List<StoredMessage> rows = store.listMessages(folderId, 500, 0);
+            // Suche laeuft in SQL (Platzhalter + Parameter ueber SearchQueryBuilder),
+            // inklusive Feld-Praefixen from: / subject: / has:attachment
             String q = effectiveQuery();
-            if (!q.isBlank()) {
-                String ql = q.toLowerCase(Locale.ROOT);
-                rows = rows.stream().filter(m ->
-                        (m.subject() != null && m.subject().toLowerCase(Locale.ROOT).contains(ql))
-                                || (m.fromName() != null && m.fromName().toLowerCase(Locale.ROOT).contains(ql))
-                                || (m.fromAddr() != null && m.fromAddr().toLowerCase(Locale.ROOT).contains(ql))
-                                || (m.preview() != null && m.preview().toLowerCase(Locale.ROOT).contains(ql)))
-                        .toList();
-            }
+            List<StoredMessage> rows = q.isBlank()
+                    ? store.listMessages(folderId, 500, 0)
+                    : store.search(folderId, q, 500);
             if (groupedThreads) {
                 rows = new ArrayList<>(rows);
                 rows.sort(Comparator.comparing((StoredMessage m) -> m.threadId() == null ? m.id() : m.threadId())
