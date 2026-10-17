@@ -1,7 +1,10 @@
 package de.metis.mail.desktop;
 
+import java.io.IOException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
@@ -78,6 +81,75 @@ public final class CidResolver {
             return URLDecoder.decode(s, StandardCharsets.UTF_8);
         } catch (IllegalArgumentException e) {
             return s;
+        }
+    }
+
+    /**
+     * Wie {@link #inline(String, List)}, schreibt aber jedes eingebettete Rasterbild
+     * als echte Datei in {@code dir} und ersetzt den cid:-Verweis durch eine
+     * file://-URI. Das ist der Pfad fuer die integrierte JEditorPane-Ansicht, die
+     * data:-URIs nicht aufloest, aber file:// lokal laden kann.
+     *
+     * <p>Sicherheit: Nur {@link #ALLOWED}-Rasterbilder unter {@link #MAX_IMAGE_BYTES}
+     * werden geschrieben; der Dateiname wird strikt auf [A-Za-z0-9._-] begrenzt, damit
+     * keine Pfad- oder Traversal-Spielerei moeglich ist.
+     */
+    public static String solveToFiles(String sanitizedHtml, List<InlineImage> images, Path dir) {
+        if (sanitizedHtml == null || !sanitizedHtml.toLowerCase(Locale.ROOT).contains("cid:")) {
+            return sanitizedHtml;
+        }
+        Map<String, InlineImage> byCid = new HashMap<>();
+        if (images != null) {
+            for (InlineImage img : images) {
+                if (img != null && img.contentId() != null && img.data() != null) {
+                    byCid.putIfAbsent(img.contentId().toLowerCase(Locale.ROOT), img);
+                }
+            }
+        }
+        Map<String, String> fileUri = new HashMap<>();
+        Matcher m = CID_SRC.matcher(sanitizedHtml);
+        StringBuilder out = new StringBuilder();
+        while (m.find()) {
+            String raw = m.group(1).replace("&amp;", "&");
+            InlineImage img = byCid.get(raw.toLowerCase(Locale.ROOT));
+            if (img == null) {
+                img = byCid.get(decode(raw).toLowerCase(Locale.ROOT));
+            }
+            String uri = null;
+            if (img != null) {
+                final InlineImage found = img;
+                uri = fileUri.computeIfAbsent(
+                        found.contentId().toLowerCase(Locale.ROOT), k -> writeImageFile(found, dir));
+            }
+            String replacement = uri == null ? "" : "src=\"" + uri + "\"";
+            m.appendReplacement(out, Matcher.quoteReplacement(replacement));
+        }
+        m.appendTail(out);
+        return out.toString();
+    }
+
+    private static String writeImageFile(InlineImage img, Path dir) {
+        String mime = img.mimeType() == null ? ""
+                : img.mimeType().split(";")[0].strip().toLowerCase(Locale.ROOT);
+        if (!ALLOWED.contains(mime) || img.data().length > MAX_IMAGE_BYTES) {
+            return null;
+        }
+        String ext = switch (mime) {
+            case "image/png" -> "png";
+            case "image/jpeg", "image/jpg" -> "jpg";
+            case "image/gif" -> "gif";
+            case "image/webp" -> "webp";
+            default -> "bin";
+        };
+        String safe = img.contentId().replaceAll("[^A-Za-z0-9._-]", "_");
+        if (safe.isBlank()) safe = "img";
+        try {
+            Files.createDirectories(dir);
+            Path file = dir.resolve(safe + "." + ext);
+            Files.write(file, img.data());
+            return file.toUri().toString();
+        } catch (IOException e) {
+            return null;
         }
     }
 }
