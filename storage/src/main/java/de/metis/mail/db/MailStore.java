@@ -41,7 +41,7 @@ import java.util.stream.Collectors;
 public class MailStore implements AutoCloseable {
 
     private static final Logger LOG = Logger.getLogger(MailStore.class.getName());
-    public static final int SCHEMA_VERSION = 3;
+    public static final int SCHEMA_VERSION = 4;
     private static final int BATCH_SIZE = 1000;
 
     private static final String UPSERT_MESSAGE_SQL = """
@@ -61,8 +61,8 @@ public class MailStore implements AutoCloseable {
             """;
 
     private static final String INSERT_ATTACHMENT_SQL = """
-            INSERT INTO attachments (message_pk, filename, mime_type, size, path)
-            VALUES (?,?,?,?,?)
+            INSERT INTO attachments (message_pk, filename, mime_type, size, path, content_id)
+            VALUES (?,?,?,?,?,?)
             """;
 
     private final Connection conn;
@@ -175,7 +175,8 @@ public class MailStore implements AutoCloseable {
                         filename TEXT,
                         mime_type TEXT,
                         size INTEGER,
-                        path TEXT
+                        path TEXT,
+                        content_id TEXT
                     )""");
             // Migration v2 -> v3: Authentifizierungs-Ergebnisse (SPF/DKIM/DMARC) je Mail
             for (String col : new String[]{"auth_spf TEXT", "auth_dkim TEXT", "auth_dmarc TEXT"}) {
@@ -188,6 +189,14 @@ public class MailStore implements AutoCloseable {
                 }
                 if (!present) s.executeUpdate("ALTER TABLE messages ADD COLUMN " + col);
             }
+            // Migration v3 -> v4: Content-ID fuer Inline-Bilder (cid:) je Anhang
+            boolean hasContentId = false;
+            try (ResultSet rs = s.executeQuery("PRAGMA table_info(attachments)")) {
+                while (rs.next()) {
+                    if ("content_id".equalsIgnoreCase(rs.getString("name"))) { hasContentId = true; break; }
+                }
+            }
+            if (!hasContentId) s.executeUpdate("ALTER TABLE attachments ADD COLUMN content_id TEXT");
             s.executeUpdate("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)");
             s.executeUpdate("CREATE INDEX IF NOT EXISTS idx_messages_folder_date ON messages(folder_id, sent_date DESC)");
             s.executeUpdate("CREATE INDEX IF NOT EXISTS idx_messages_message_id ON messages(message_id)");
@@ -513,6 +522,7 @@ public class MailStore implements AutoCloseable {
                 ps.setString(3, att.getMimeType());
                 ps.setLong(4, att.getSize());
                 ps.setString(5, relPath);
+                ps.setString(6, att.getContentId());
                 ps.executeUpdate();
             }
         }
@@ -667,12 +677,12 @@ public class MailStore implements AutoCloseable {
     public java.util.List<StoredAttachment> listAttachments(long messageId) throws SQLException {
         java.util.List<StoredAttachment> out = new ArrayList<>();
         try (PreparedStatement ps = conn.prepareStatement(
-                "SELECT id, filename, mime_type, size, path FROM attachments WHERE message_pk=? ORDER BY id")) {
+                "SELECT id, filename, mime_type, size, path, content_id FROM attachments WHERE message_pk=? ORDER BY id")) {
             ps.setLong(1, messageId);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     out.add(new StoredAttachment(rs.getLong(1), rs.getString(2), rs.getString(3),
-                            rs.getLong(4), rs.getString(5)));
+                            rs.getLong(4), rs.getString(5), rs.getString(6)));
                 }
             }
         }
@@ -688,7 +698,12 @@ public class MailStore implements AutoCloseable {
     }
 
     /** Anhang-Metadaten fuer die UI (M4-006). */
-    public record StoredAttachment(long id, String fileName, String mimeType, long size, String path) {
+    public record StoredAttachment(long id, String fileName, String mimeType, long size, String path,
+                                   String contentId) {
+        /** Kompatibilitaet: Aufrufer ohne Content-ID (bestehender Code und Tests). */
+        public StoredAttachment(long id, String fileName, String mimeType, long size, String path) {
+            this(id, fileName, mimeType, size, path, null);
+        }
         public boolean onDisk() { return path != null; }
     }
 
