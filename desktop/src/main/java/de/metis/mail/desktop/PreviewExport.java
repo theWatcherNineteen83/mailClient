@@ -2,10 +2,15 @@ package de.metis.mail.desktop;
 
 import java.awt.Desktop;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.util.Comparator;
+import java.util.stream.Stream;
 
 /**
  * M4-004: Vorschau im Systembrowser des Betriebssystems.
@@ -27,9 +32,34 @@ public final class PreviewExport {
         this.dir = dir;
     }
 
-    /** Standardordner fuer Browser-Vorschauen (temporaer). */
+    /**
+     * Standardordner fuer Browser-Vorschauen (temporaer).
+     *
+     * <p>Legt pro Start ein zufaellig benanntes Verzeichnis an, das nur der eigene
+     * Nutzer lesen/eintreten darf (rwx------ auf POSIX) und rueumt es beim Beenden
+     * vollstaendig auf. Das verhindert, dass ein zweiter lokaler Nutzer den
+     * vorhersehbaren Pfad vorab anlegt oder fremde Mails mitliest und dass die
+     * letzte Vorschau dauerhaft liegen bleibt.
+     */
     public static PreviewExport inTempDir() {
-        return new PreviewExport(Path.of(System.getProperty("java.io.tmpdir"), "mailclient-preview"));
+        try {
+            Path base = Path.of(System.getProperty("java.io.tmpdir"));
+            Path d = FileSystems.getDefault().supportedFileAttributeViews().contains("posix")
+                    ? Files.createTempDirectory(base, "mailclient-preview-",
+                        PosixFilePermissions.asFileAttribute(
+                            PosixFilePermissions.fromString("rwx------")))
+                    : Files.createTempDirectory(base, "mailclient-preview-");
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                try (Stream<Path> s = Files.walk(d)) {
+                    s.sorted(Comparator.reverseOrder()).forEach(p -> p.toFile().delete());
+                } catch (IOException ignored) {
+                    // Best-effort cleanup beim Herunterfahren
+                }
+            }));
+            return new PreviewExport(d);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     /**
