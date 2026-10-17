@@ -60,6 +60,8 @@ public final class MailFrame extends JFrame {
     private LayoutPreset layout;
     /** M4-004: Vorschau-Modus — integriert (Java) oder im Standardbrowser des Systems. */
     private String previewMode;
+    /** M4-004: eine Vorschau-Instanz pro Programmstart (kein Leck durch wiederholtes inTempDir()). */
+    private final PreviewExport preview = PreviewExport.inTempDir();
     private boolean groupedThreads;
     private String lookKey;
     private String themeKey;
@@ -994,7 +996,7 @@ public final class MailFrame extends JFrame {
     /** Schreibt die sanitisierte Mail in eine temporaere Datei und oeffnet sie im Systembrowser. */
     private void openPreviewInBrowser(String sanitizedHtml) {
         try {
-            var file = PreviewExport.inTempDir().write(sanitizedHtml);
+            var file = preview.write(sanitizedHtml);
             PreviewExport.openInBrowser(file);
             statusLeft.setText(I18n.tr("preview.opened", file.getFileName().toString()));
         } catch (Exception e) {
