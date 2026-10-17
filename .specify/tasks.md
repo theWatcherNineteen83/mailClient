@@ -2,7 +2,7 @@
 
 **Project:** Modular Java Mail Client (`de.metis.mail`)
 **Author:** Prometheus (OpenClaw Agent)
-**Date:** 11.10.2026 (letzte Änderung: 12.10.2026)
+**Date:** 11.10.2026 (letzte Änderung: 17.10.2026)
 **Status:** In Arbeit
 
 ## Task Breakdown
@@ -55,9 +55,9 @@
 | M4-003 | Account-Verwaltung per UI: mehrere Konten (IMAP/POP3+SMTP), CRUD, Test-Login, Passwörter verschlüsselt gespeichert | 🟡 TEILWEISE 13.10.2026: **Anlage-Maske fertig** (Datei→E-Mail-Konto anlegen: Name, E-Mail, IMAP/POP3, Server/Port/Verschlüsselung Empfang+SMTP, Benutzer, Kennwort, Standard-Ports automatisch, Strato-Preset, Verbindungstest live, SQLite-Persistenz Schema v2 inkl. v1-Migration, AccountSchemaTest 4 Tests grün) ✅; Konto-Umschalter + Konten bearbeiten/loeschen per UI FERTIG 13.10.2026 (ComboBox-Umschalter in der Toolbar, Wechsel laedt Ordner + Mails des Kontos, Menue Datei -> Konto bearbeiten/loeschen mit Rueckfrage, MailStore.updateAccount/deleteAccount mit CASCADE, AccountCrudTest 3 Tests gruen, Commit fe43df0); echter Sync ins Postfach FERTIG 13.10.2026 (SyncService + Menü „Mails synchronisieren“, SwingWorker, Commit 4a03945), Passwort-Verschlüsselung (Metis-Ziel MailKeyring läuft) (aktuell Klartext in SQLite — Keyring folgt) | Prometheus |
 | M4-004 | Mail-Liste + Lesebereich: Sortierung, Paging, HTML saniert via JEditorPane, Header + SPF/DKIM/DMARC-Badge, Spam-Ampel | 🟡 TEILWEISE 12.10.2026: Liste/Leser/sanitiertes HTML/Spam-Ampel als Prozent (0-100, Schwellen 30/60) ✅; **SPF/DKIM/DMARC-Ampel FERTIG 13.10.2026** (Schema v3: auth_spf/auth_dkim/auth_dmarc je Mail, Migration v2→v3, Badge im Leser mit Label/Farbe/Tooltip, AuthResultsStorageTest 2 Tests, Commit 7a69c98) ✅; Paging-UI offen | Prometheus |
 | M4-005 | Threading als Option: flache Liste ↔ Konversations-Gruppierung umschaltbar (Backend: MessageThreader/thread_id) | ✅ FERTIG 12.10.2026 | Prometheus |
-| M4-006 | Suche + Attachments: Suchfeld (SQLite-Suche), Attachments anzeigen/öffnen/speichern | 🟡 TEILWEISE 12.10.2026: Suchfeld + Schnellfilter ✅; Attachment-UI offen | Prometheus |
-| M4-007 | Composer: Schreiben/Antworten/Antw. an alle/Weiterleiten via SMTP, Multipart + Attachments | 🟡 TEILWEISE 12.10.2026: Neu/Antwort (mit Zitat)/Weiterleitung → Gesendet-Ordner (lokal) ✅; SMTP-Versand + Anhänge offen | Prometheus |
-| M4-008 | Flags/Sync: Gelesen/Ungesehen/Flag/Soft-Delete, Sync-Status pro Account, Worker-Threads (kein IO auf EDT) | 🟡 TEILWEISE 12.10.2026: Gelesen/Flag/Soft-Delete + SwingWorker (kein IO auf EDT) ✅; Sync-Status in der Statuszeile FERTIG 13.10.2026 (sync.running/sync.done/sync.fail inkl. Fehlertext); **Papierkorb FERTIG 13.10.2026** (Löschen → Papierkorb sichtbar, Wiederherstellen, endgültig löschen einzeln + Papierkorb leeren inkl. Entfernen der Anhang-Dateien, Standard-Ordner für alle Konten, MailTrashTest 4 Tests, Commit d2d96c1) ✅; offen: dauerhafte Statusanzeige je Konto, Flag-/Lösch-Sync zum IMAP-Server | Prometheus |
+| M4-006 | Suche + Attachments: Suchfeld (SQLite-Suche), Attachments anzeigen/oeffnen/speichern | ✅ FERTIG 17.10.2026: Suchfeld + Schnellfilter (SQLite, Feld-Praefixe) ✅; **Attachment-UI FERTIG** — Anhang-Leiste unter dem Leser (Anzahl, Liste mit Groesse/MIME), Oeffnen (Temp-Datei + Desktop.open) und Speichern (JFileChooser), Doppelklick oeffnet, fehlende Platten-Datei wird gemeldet; MailStore.listAttachments/readAttachment + Record StoredAttachment; IO im SwingWorker (Commit 9bcc5de) | Prometheus |
+| M4-007 | Composer: Schreiben/Antworten/Antw. an alle/Weiterleiten via SMTP, Multipart + Attachments | ✅ FERTIG 17.10.2026: Neu/Antwort (mit Zitat)/Weiterleitung → Gesendet-Ordner (lokal) ✅; **SMTP-Versand FERTIG** — MailSender sendet ueber den SMTP-Server des aktiven Kontos (SmtpMailClient, SSL/STARTTLS/NONE), Absender = Konto-E-Mail; ohne SMTP-Daten Fallback auf lokale Ablage; **Anhaenge FERTIG** — Datei anfuegen/entfernen mit AttachmentPolicy-Pruefung (gesperrte Endungen werden abgelehnt), MIME-Typ automatisch, Versand im SwingWorker; Mail zusaetzlich lokal im Gesendet-Ordner gespiegelt (Commit 25792ab) | Prometheus |
+| M4-008 | Flags/Sync: Gelesen/Ungesehen/Flag/Soft-Delete, Sync-Status pro Account, Worker-Threads (kein IO auf EDT) | 🟡 TEILWEISE 17.10.2026: Gelesen/Flag/Soft-Delete + SwingWorker ✅; Sync-Status in der Statuszeile ✅ (sync.running/sync.done/sync.fail inkl. Fehlertext); **Papierkorb FERTIG** 13.10.2026 (MailTrashTest 4 Tests, Commit d2d96c1) ✅; offen: dauerhafte Statusanzeige je Konto, Flag-/Loesch-Sync zum IMAP-Server (Metis-Goal ImapFlagSync, Prio 90) | Prometheus |
 | M4-009 | Polish: System-LAF, HiDPI, Tray (Backlog), Smoke-Tests headless | 🟡 TEILWEISE 13.10.2026: System-LAF + Design-Menü plattformgefiltert (GTK nur Linux, Windows-LAF nur Windows) + Logo-Icon ✅; **Farbschema Hell/Dunkel/Automatisch verdrahtet** (Menü Ansicht→Farbschema, ui.theme in SQLite, Theme-Palette ersetzt Hardcodes, Dark-Reader-CSS, ThemeTest 11 Tests grün) ✅; CI: GitHub Actions grün inkl. Release-Jar ab v0.1.2-m4 (GreenMail-Tests auf unprivilegierte Loopback-Ports umgestellt) ✅; HiDPI/Tray Backlog | Prometheus |
 | M4-010 | Vorschau wahlweise integriert oder im Standardbrowser des Systems | ✅ FERTIG 13.10.2026: Ansicht → „Vorschau öffnen mit" (integriert / Systembrowser, in SQLite persistiert) + „Ausgewählte Mail im Browser öffnen"; PreviewExport schreibt UTF-8 + restriktive CSP (default-src none, kein Tracking), Desktop.browse mit Fallback auf integriert; PreviewExportTest 3 Tests (Commit d2d96c1) | Prometheus |
 | M4-011 | Ablageort der Daten wählbar (portabel neben dem Jar oder Benutzerprofil) | ✅ FERTIG 13.10.2026: AppPaths mit Auflösung -Dmailclient.data > location.txt > portable.txt neben dem Jar > ~/MailClient-Daten > OS-Standard (Windows %APPDATA%\\MailClient); Menü Datei → Datenordner… (Portabel/Benutzerverzeichnis/eigener Ordner/öffnen), Start loggt den Ordner; AppPathsTest 6 Tests (Commit d2d96c1) | Prometheus |
@@ -80,10 +80,11 @@
 | BUG-004 | AuthenticationResultsParser | Status-Parsing korrekt (pass/fail), aber `domain`-Feld immer null | ✅ FIXED 12.10.2026 — Domain-Extraktion aus smtp.mailfrom/header.d/header.from. Nachfix M2-004: Rewrite auf RFC-8601-Pattern `(spf\|dkim\|dmarc)=([a-z]+)` — kannte vorher Status `none` nicht und matchte `pass`/`fail` substring-basiert (falsch z.B. bei Domain `pass.example.com`). Test grün. |
 | BUG-005 | SpamHeuristicScorer | Feuert zu spät: Test-Spam score nur 25/100 (erwartet >60) | ✅ FIXED 12.10.2026 — 6 Heuristiken (Sender-Mismatch, suspicious TLD in E-Mails UND URL-Hosts, Uppercase-Subject, Link-Count, Urgency-Words, Missing-Auth). Test-Spam: 70/100, Clean: 0/100. Test grün. |
 
-## Verification (12.10.2026, Stand M3+POP3)
+## Verification (17.10.2026, Stand M4-007/M4-006)
 
 - Gradle Multi-Project (`settings.gradle` + `core/` + `protocol/` + `storage/`): `gradle build` erfolgreich (Gradle 9.5.1, JDK 25, Release-Level 17).
-- **199 JUnit-5-Tests, 0 Failures** (`gradle test`) — Stand 13.10.2026.
+- **199 JUnit-5-Tests, 0 Failures** (`gradle build`) — Stand 17.10.2026, BUILD SUCCESSFUL.
+- Bauen auf kali: Gradle-Daemon stirbt mit Default-Heap (512 MiB) → `GRADLE_OPTS="-Xmx3g" ./gradlew --no-daemon build` (nur lokal).
 - POP3: `Pop3MailClient` (connect/fetch/count/delete-expunge) + 4 GreenMail-POP3-Integrationstests grün.
 - M3-001: `MailStore` (SQLite, WAL, Indizes, Upsert-Dedupe per Message-ID mit Content-Hash-Fallback, Attachments als Dateien auf Disk + Metadaten in DB, Paging, Suche, Flags, Persistenz über Reopen getestet).
 - M3-002: `MailSyncService` — IMAP/POP3 → SpamHeuristicScorer → SQLite; End-to-End-Test (SMTP → GreenMail → IMAP-Fetch → Sync → DB) grün; Re-Sync dupliziert nicht; Spam-Score landet in DB.
@@ -97,7 +98,11 @@
 
 ## Next Actions
 
-1. Metis-Runde 2 (per POST /api/usergoals angelegt, Status OFFEN): AttachmentNameSanitizer (Prio 80), Rfc2047HeaderDecoder (75), MailSnippetGenerator (70). Runde 1 ist abgeschlossen und integriert (MailKeyring, SecurityBadge, SearchQueryBuilder — Commits f090038/7a69c98)
-2. Prometheus als Nächstes: SMTP-Versand + Anhänge (M4-007), Attachment-UI öffnen/speichern (M4-006, dann mit Metis' AttachmentNameSanitizer), Flag-/Lösch-Sync zum IMAP-Server, Paging-UI
-3. Offen mit Georg: sudo apt install clamav-daemon → EICAR-Livetest ERLEDIGT 13.10.2026 22:44 gegen den echten clamd (ClamAV 1.4.6/28152): PING→pong, EICAR→stream: Eicar-Test-Signature FOUND, saubere Mail→stream: OK, zweiter Scan auf derselben Verbindung→OK — ClamdClient live bestätigt; IMAP/SMTP/POP3-Livetest gegen Strato-Postfach
-4. ERLEDIGT 13.10.2026 — Repo-Hygiene: Code-Historie liegt jetzt auf `main` (Force-Push der master-Historie, CI-Trigger auf main, `master` stillgelegt; alter Orphan-Commit mit dem ungenutzten Publish-Template als Rettungsanker: f81cd6a)
+1. **M4-008 abschliessen:** Flag-/Loesch-Sync zum IMAP-Server. Metis-Goal `mailclient-imap-flag-sync` (Prio 90) angelegt;
+   Fallback im Repo: `ImapMailClient.markDeleted()` (per `codestral-agent:latest` auf miniedi generiert) muss eingebaut und
+   gegen GreenMail getestet werden.
+2. **M4-009 (Paging-UI):** Mail-Liste mit Seitenwechsel (500er-Seiten existieren im Store), Paging-Zustand in der Statuszeile.
+3. Danach Phase 6 (Android UI, M5-001 ... M5-003).
+4. Offen mit Georg: IMAP/SMTP/POP3-Livetest gegen das Strato-Postfach (nur mit seinen Zugangsdaten).
+5. Code-Erzeugung: Metis (qwen3.8:27b) fuer Feature-Klassen, lokales Ollama auf miniedi (codestral-agent /
+   devstral-small-2 / qwen3.8:27b) fuer gezielte Methoden - Abnahme immer ueber `gradle build`.

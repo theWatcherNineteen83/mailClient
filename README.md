@@ -53,7 +53,7 @@ Der Start loggt den benutzten Ordner. Inhalt: `mail.sqlite`, `attachments/`, `ke
 ## Build
 
 ```bash
-gradle build      # kompilieren + 199 JUnit-5-Tests (inkl. GreenMail-Integration + 100K-Perf)
+GRADLE_OPTS="-Xmx3g" ./gradlew --no-daemon build   # kompilieren + 199 JUnit-5-Tests
 gradle test       # nur Tests
 gradle :desktop:fatJar   # MailClient-0.1.0.jar — ein File, Start per java -jar (JDK 17+)
 ```
@@ -102,9 +102,9 @@ als Dateien auf Disk, nur Metadaten in der DB (hält die DB schlank).
   **Papierkorb (Wiederherstellen / endgültig löschen / leeren)**, **SQL-Suche mit Feld-Präfixen**
   (`from:`, `subject:`, `has:attachment:`), **SPF/DKIM/DMARC-Ampel**, **Vorschau integriert oder im
   Systembrowser**, **wählbarer Ablageort (portabel / Benutzerprofil)**, Threading-Umschaltung,
-  Spam-Prozent-Ampel, Build+Release über GitHub Actions
-  - *Offen:* SMTP-Versand (M4-007), Attachment-UI öffnen/speichern (M4-006), Paging-UI, HiDPI/Tray,
-    Flag- und Lösch-Sync zum IMAP-Server
+  Spam-Prozent-Ampel, Build+Release über GitHub Actions,
+  **SMTP-Versand mit Anhängen** (M4-007), **Anhang-Leiste im Leser** öffnen/speichern (M4-006)
+  - *Offen:* Paging-UI, HiDPI/Tray, Flag- und Lösch-Sync zum IMAP-Server
 - **M5:** Android-UI
 
 Details: [.specify/tasks.md](.specify/tasks.md) · UI-Vorgabe: [.specify/spec-ui.md](.specify/spec-ui.md)
