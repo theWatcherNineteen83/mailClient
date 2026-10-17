@@ -42,6 +42,13 @@ public final class MailFrame extends JFrame {
     private final JComboBox<String> accountBox = new JComboBox<>();
     private boolean populatingAccounts;
     private String currentAccountName;
+    /** M4-006: Anhang-Leiste unter dem Leser (Name, Groesse, Oeffnen/Speichern). */
+    private final DefaultListModel<MailStore.StoredAttachment> attachmentModel = new DefaultListModel<>();
+    private final JList<MailStore.StoredAttachment> attachmentList = new JList<>(attachmentModel);
+    private final JPanel attachmentPanel = new JPanel(new BorderLayout());
+    private JPanel readerHost;
+    private final JLabel attachmentLabel = new JLabel();
+
     /** M4-004: SPF/DKIM/DMARC-Ampel ueber dem Leser. */
     private final JLabel securityBadge = new JLabel();
     private final JLabel statusLeft = new JLabel();
@@ -308,6 +315,7 @@ public final class MailFrame extends JFrame {
         securityBadge.setBorder(BorderFactory.createEmptyBorder(3, 8, 3, 8));
         securityBadge.setFont(securityBadge.getFont().deriveFont(Font.BOLD, 11f));
         readerScroll.setColumnHeaderView(securityBadge);
+        buildAttachmentPanel(readerScroll);
 
         boolean previewMode = layout == LayoutPreset.FOXMAIL;
         messageTable.setRowHeight(previewMode ? 46 : 20);
@@ -335,7 +343,7 @@ public final class MailFrame extends JFrame {
 
         switch (layout) {
             case DEFAULT -> {
-                JSplitPane inner = new JSplitPane(JSplitPane.VERTICAL_SPLIT, tableScroll, readerScroll);
+                JSplitPane inner = new JSplitPane(JSplitPane.VERTICAL_SPLIT, tableScroll, readerHost);
                 inner.setResizeWeight(0.45);
                 lastSplitA = inner;
                 JSplitPane outer = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, foldersScroll, inner);
@@ -350,7 +358,7 @@ public final class MailFrame extends JFrame {
                 quickFilter.setPreferredSize(new Dimension(200, 26));
                 listHeader.add(new JLabel(I18n.tr("filter.quick")), BorderLayout.WEST);
                 listHeader.add(quickFilter, BorderLayout.CENTER);
-                JSplitPane inner = new JSplitPane(JSplitPane.VERTICAL_SPLIT, tableScroll, readerScroll);
+                JSplitPane inner = new JSplitPane(JSplitPane.VERTICAL_SPLIT, tableScroll, readerHost);
                 inner.setResizeWeight(0.4);
                 JPanel listWrap = new JPanel(new BorderLayout());
                 listWrap.add(listHeader, BorderLayout.NORTH);
@@ -366,7 +374,7 @@ public final class MailFrame extends JFrame {
                 JPanel topRow = new JPanel(new BorderLayout());
                 topRow.add(foldersScroll, BorderLayout.WEST);
                 topRow.add(tableScroll, BorderLayout.CENTER);
-                JSplitPane vert = new JSplitPane(JSplitPane.VERTICAL_SPLIT, topRow, readerScroll);
+                JSplitPane vert = new JSplitPane(JSplitPane.VERTICAL_SPLIT, topRow, readerHost);
                 vert.setResizeWeight(0.55);
                 lastSplitA = vert;
                 centerPanel.add(vert, BorderLayout.CENTER);
@@ -402,7 +410,7 @@ public final class MailFrame extends JFrame {
                 JPanel listCol = new JPanel(new BorderLayout());
                 listCol.add(headBar, BorderLayout.NORTH);
                 listCol.add(tableScroll, BorderLayout.CENTER);
-                JSplitPane inner = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, listCol, readerScroll);
+                JSplitPane inner = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, listCol, readerHost);
                 inner.setResizeWeight(0.48);
                 inner.setDividerSize(6);
                 lastSplitA = inner;
@@ -573,6 +581,129 @@ public final class MailFrame extends JFrame {
         return !a.isEmpty() ? a : b;
     }
 
+    /** M4-006: Leiste unter dem Leser mit Anhaengen (Oeffnen = temporaer speichern und starten). */
+    private void buildAttachmentPanel(JScrollPane readerScroll) {
+        attachmentLabel.setFont(attachmentLabel.getFont().deriveFont(Font.BOLD, 11f));
+        attachmentLabel.setBorder(BorderFactory.createEmptyBorder(3, 8, 3, 8));
+        attachmentList.setVisibleRowCount(3);
+        attachmentList.setCellRenderer(new DefaultListCellRenderer() {
+            @Override public Component getListCellRendererComponent(JList<?> list, Object value,
+                    int index, boolean selected, boolean focused) {
+                super.getListCellRendererComponent(list, value, index, selected, focused);
+                if (value instanceof MailStore.StoredAttachment a) {
+                    setText(a.fileName() + "  (" + humanSize(a.size()) + ")");
+                    setToolTipText(a.mimeType() + (a.onDisk() ? "" : " · nur Metadaten"));
+                }
+                return this;
+            }
+        });
+        attachmentList.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override public void mouseClicked(java.awt.event.MouseEvent e) {
+                if (e.getClickCount() == 2) openSelectedAttachment();
+            }
+        });
+        JButton openBtn = new JButton(I18n.tr("attach.open"));
+        JButton saveBtn = new JButton(I18n.tr("attach.save"));
+        openBtn.addActionListener(e -> openSelectedAttachment());
+        saveBtn.addActionListener(e -> saveSelectedAttachment());
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 2));
+        buttons.add(openBtn);
+        buttons.add(saveBtn);
+
+        attachmentPanel.add(attachmentLabel, BorderLayout.NORTH);
+        attachmentPanel.add(new JScrollPane(attachmentList), BorderLayout.CENTER);
+        attachmentPanel.add(buttons, BorderLayout.SOUTH);
+        attachmentPanel.setVisible(false);
+
+        JPanel right = new JPanel(new BorderLayout());
+        right.add(readerScroll, BorderLayout.CENTER);
+        right.add(attachmentPanel, BorderLayout.SOUTH);
+        readerHost = right;
+    }
+
+    /** Anhaenge der gewaehlten Mail laden (nur Metadaten aus der DB, kein Datei-IO auf der EDT). */
+    private void loadAttachments(StoredMessage m) {
+        attachmentModel.clear();
+        try {
+            for (MailStore.StoredAttachment a : store.listAttachments(m.id())) {
+                attachmentModel.addElement(a);
+            }
+        } catch (SQLException e) {
+            // Anhaenge sind optional: Fehler nicht in die UI durchreichen
+        }
+        int n = attachmentModel.getSize();
+        attachmentLabel.setText(n == 0 ? "" : " " + I18n.tr("attach.count", n) + " ");
+        attachmentPanel.setVisible(n > 0);
+    }
+
+    private MailStore.StoredAttachment selectedAttachment() {
+        return attachmentList.getSelectedValue();
+    }
+
+    private void openSelectedAttachment() {
+        MailStore.StoredAttachment a = selectedAttachment();
+        if (a == null) { statusLeft.setText(I18n.tr("attach.noselection")); return; }
+        new SwingWorker<java.nio.file.Path, Void>() {
+            @Override protected java.nio.file.Path doInBackground() throws Exception {
+                return writeTempAttachment(a);
+            }
+            @Override protected void done() {
+                try {
+                    java.nio.file.Path file = get();
+                    if (file == null) { statusLeft.setText(I18n.tr("attach.nodesk")); return; }
+                    if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) {
+                        Desktop.getDesktop().open(file.toFile());
+                        statusLeft.setText(I18n.tr("attach.opened", a.fileName()));
+                    } else {
+                        statusLeft.setText(I18n.tr("attach.noopen"));
+                    }
+                } catch (Exception e) {
+                    statusLeft.setText(I18n.tr("attach.err", e.getMessage()));
+                }
+            }
+        }.execute();
+    }
+
+    private void saveSelectedAttachment() {
+        MailStore.StoredAttachment a = selectedAttachment();
+        if (a == null) { statusLeft.setText(I18n.tr("attach.noselection")); return; }
+        JFileChooser fc = new JFileChooser();
+        fc.setSelectedFile(new java.io.File(a.fileName()));
+        if (fc.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
+        java.io.File target = fc.getSelectedFile();
+        new SwingWorker<byte[], Void>() {
+            @Override protected byte[] doInBackground() throws Exception {
+                return store.readAttachment(a);
+            }
+            @Override protected void done() {
+                try {
+                    byte[] data = get();
+                    if (data == null) { statusLeft.setText(I18n.tr("attach.nodesk")); return; }
+                    java.nio.file.Files.write(target.toPath(), data);
+                    statusLeft.setText(I18n.tr("attach.saved", target.getAbsolutePath()));
+                } catch (Exception e) {
+                    statusLeft.setText(I18n.tr("attach.err", e.getMessage()));
+                }
+            }
+        }.execute();
+    }
+
+    /** Anhang in ein Temp-Verzeichnis schreiben (fuer Desktop.open). */
+    private java.nio.file.Path writeTempAttachment(MailStore.StoredAttachment a) throws Exception {
+        byte[] data = store.readAttachment(a);
+        if (data == null) return null;
+        java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("mailclient-att-");
+        java.nio.file.Path file = dir.resolve(a.fileName());
+        java.nio.file.Files.write(file, data);
+        return file;
+    }
+
+    private static String humanSize(long n) {
+        if (n < 1024) return n + " B";
+        if (n < 1024 * 1024) return String.format(Locale.ROOT, "%.1f KB", n / 1024.0);
+        return String.format(Locale.ROOT, "%.1f MB", n / (1024.0 * 1024.0));
+    }
+
     private void onMessageSelected() {
         int v = messageTable.getSelectedRow();
         if (v < 0) return;
@@ -598,6 +729,7 @@ public final class MailFrame extends JFrame {
             reader.setCaretPosition(0);
             statusRight.setText(I18n.tr("status.selected", m.subject()));
             updateSecurityBadge(m);
+            loadAttachments(m);
             if (m.unseen()) {
                 store.setUnseen(m.id(), false);
                 reloadMessages();

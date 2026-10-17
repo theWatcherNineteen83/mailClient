@@ -663,6 +663,35 @@ public class MailStore implements AutoCloseable {
         return removed;
     }
 
+    /** M4-006: Anhaenge einer Mail fuer die UI (Name, MIME, Groesse, relativer Pfad). */
+    public java.util.List<StoredAttachment> listAttachments(long messageId) throws SQLException {
+        java.util.List<StoredAttachment> out = new ArrayList<>();
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT id, filename, mime_type, size, path FROM attachments WHERE message_pk=? ORDER BY id")) {
+            ps.setLong(1, messageId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.add(new StoredAttachment(rs.getLong(1), rs.getString(2), rs.getString(3),
+                            rs.getLong(4), rs.getString(5)));
+                }
+            }
+        }
+        return out;
+    }
+
+    /** M4-006: Bytes eines Anhangs (null, wenn keine Datei auf der Platte liegt). */
+    public byte[] readAttachment(StoredAttachment att) throws SQLException, java.io.IOException {
+        if (att == null || att.path() == null || attachmentsDir == null) return null;
+        java.nio.file.Path file = attachmentsDir.resolve(att.path());
+        if (!Files.exists(file)) return null;
+        return Files.readAllBytes(file);
+    }
+
+    /** Anhang-Metadaten fuer die UI (M4-006). */
+    public record StoredAttachment(long id, String fileName, String mimeType, long size, String path) {
+        public boolean onDisk() { return path != null; }
+    }
+
     private List<String> attachmentPaths(long messageId) throws SQLException {
         List<String> files = new ArrayList<>();
         try (PreparedStatement ps = conn.prepareStatement(
