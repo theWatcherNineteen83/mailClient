@@ -16,6 +16,7 @@ import java.io.InputStream;
 import java.time.Instant;
 import java.util.Date;
 import java.util.logging.Level;
+import java.util.Locale;
 import java.util.logging.Logger;
 
 /**
@@ -119,16 +120,22 @@ public final class MessageConverter {
                 extractContent(mp.getBodyPart(i), builder);
             }
         } else {
-            // Treat as attachment
+            // Anhang oder Inline-Bild (Content-ID)
             String fileName = part.getFileName();
-            if (fileName != null) {
-                byte[] data = readBytes(part);
-                long size = part.getSize() > 0 ? part.getSize() : data.length;
-                if (data.length <= MAX_ATTACHMENT_SIZE) {
-                    builder.addAttachment(fileName, part.getContentType(), size, data);
-                } else {
-                    LOG.warning("Attachment too large, skipped: " + fileName + " (" + size + " bytes)");
-                }
+            String cid = normalizeContentId(part.getHeader("Content-ID"));
+            if (fileName == null && cid == null) {
+                return; // wie bisher: ohne Namen und ohne CID ignorieren
+            }
+            String mime = part.getContentType();
+            if (fileName == null) {
+                fileName = fallbackName(cid, mime);
+            }
+            byte[] data = readBytes(part);
+            long size = part.getSize() > 0 ? part.getSize() : data.length;
+            if (data.length <= MAX_ATTACHMENT_SIZE) {
+                builder.addAttachment(fileName, mime, size, data, cid);
+            } else {
+                LOG.warning("Attachment too large, skipped: " + fileName + " (" + size + " bytes)");
             }
         }
     }
@@ -138,6 +145,30 @@ public final class MessageConverter {
             in.transferTo(out);
             return out.toByteArray();
         }
+    }
+
+    /** "<logo123>" -> "logo123"; null/leer -> null. */
+    static String normalizeContentId(String[] header) {
+        if (header == null || header.length == 0 || header[0] == null) return null;
+        String v = header[0].strip();
+        if (v.startsWith("<") && v.endsWith(">") && v.length() > 2) {
+            v = v.substring(1, v.length() - 1).strip();
+        }
+        return v.isEmpty() ? null : v;
+    }
+
+    /** Dateiname fuer Inline-Teile ohne Namen, z. B. "inline-logo123.png". */
+    static String fallbackName(String cid, String contentType) {
+        String base = contentType == null ? "" : contentType.split(";")[0].strip().toLowerCase(Locale.ROOT);
+        String ext = switch (base) {
+            case "image/png" -> "png";
+            case "image/jpeg", "image/jpg" -> "jpg";
+            case "image/gif" -> "gif";
+            case "image/webp" -> "webp";
+            default -> "bin";
+        };
+        String safe = cid.replaceAll("[^A-Za-z0-9._-]", "_");
+        return "inline-" + safe + "." + ext;
     }
 
     /**

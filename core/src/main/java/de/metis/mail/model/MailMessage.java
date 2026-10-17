@@ -115,12 +115,14 @@ public final class MailMessage {
         private final String mimeType;
         private final long size;
         private final byte[] data;
+        private final String contentId; // ohne spitze Klammern, null wenn nicht vorhanden
 
-        private Attachment(String fileName, String mimeType, long size, byte[] data) {
+        private Attachment(String fileName, String mimeType, long size, byte[] data, String contentId) {
             this.fileName = Objects.requireNonNull(fileName, "FileName cannot be null");
             this.mimeType = mimeType != null ? mimeType : "application/octet-stream";
             this.size = size;
             this.data = data != null ? data.clone() : new byte[0];
+            this.contentId = (contentId == null || contentId.isBlank()) ? null : contentId.strip();
         }
 
         public String getFileName() {
@@ -137,6 +139,11 @@ public final class MailMessage {
 
         public byte[] getData() {
             return data.clone();
+        }
+
+        /** Content-ID ohne spitze Klammern, null wenn nicht vorhanden. */
+        public String getContentId() {
+            return contentId;
         }
 
         @Override
@@ -248,7 +255,11 @@ public final class MailMessage {
         }
 
         public Builder addAttachment(String fileName, String mimeType, long size, byte[] data) {
-            this.attachments.add(new Attachment(fileName, mimeType, size, data));
+            return addAttachment(fileName, mimeType, size, data, null);
+        }
+
+        public Builder addAttachment(String fileName, String mimeType, long size, byte[] data, String contentId) {
+            this.attachments.add(new Attachment(fileName, mimeType, size, data, contentId));
             return this;
         }
 
