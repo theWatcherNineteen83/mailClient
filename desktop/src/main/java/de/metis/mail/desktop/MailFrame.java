@@ -628,7 +628,16 @@ public final class MailFrame extends JFrame {
     }
 
     private void openCompose() {
-        ComposeDialog.openNew(this, store, sentFolderId(), this::reloadMessages);
+        // M4-007: Absender + SMTP-Konto aus dem aktiven Konto ableiten
+        String from = null;
+        try {
+            if (currentAccountName != null) {
+                for (MailStore.StoredAccount a : store.listAccounts()) {
+                    if (a.name().equals(currentAccountName)) { from = a.email(); break; }
+                }
+            }
+        } catch (SQLException ignored) { }
+        ComposeDialog.openNew(this, store, sentFolderId(), currentAccountName, from, this::reloadMessages);
     }
 
     /** M4-003: Konto-Eingabemaske öffnen; nach Speichern Statusmeldung. */
