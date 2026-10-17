@@ -716,7 +716,7 @@ public final class MailFrame extends JFrame {
             String text = bodies != null ? bodies[0] : null;
             if (html != null && !html.isBlank()) {
                 reader.setContentType("text/html");
-                String clean = CidResolver.solveToFiles(sanitizer.sanitize(html), loadInlineImages(m), preview.dir());
+                String clean = CidResolver.solveToFiles(sanitizer.sanitize(html), loadInlineImages(m), preview.dir(), String.valueOf(m.id()));
                 String css = Theme.readerCss();
                 reader.setText(css.isEmpty() ? clean : "<style>" + css + "</style>" + clean);
                 if ("browser".equals(previewMode)) {

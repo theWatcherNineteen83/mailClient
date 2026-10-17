@@ -95,9 +95,14 @@ public final class CidResolver {
      * keine Pfad- oder Traversal-Spielerei moeglich ist.
      */
     public static String solveToFiles(String sanitizedHtml, List<InlineImage> images, Path dir) {
+        return solveToFiles(sanitizedHtml, images, dir, "msg");
+    }
+
+    public static String solveToFiles(String sanitizedHtml, List<InlineImage> images, Path dir, String msgKey) {
         if (sanitizedHtml == null || !sanitizedHtml.toLowerCase(Locale.ROOT).contains("cid:")) {
             return sanitizedHtml;
         }
+        Path msgDir = dir.resolve(sanitizeSegment(msgKey));
         Map<String, InlineImage> byCid = new HashMap<>();
         if (images != null) {
             for (InlineImage img : images) {
@@ -119,13 +124,19 @@ public final class CidResolver {
             if (img != null) {
                 final InlineImage found = img;
                 uri = fileUri.computeIfAbsent(
-                        found.contentId().toLowerCase(Locale.ROOT), k -> writeImageFile(found, dir));
+                        found.contentId().toLowerCase(Locale.ROOT), k -> writeImageFile(found, msgDir));
             }
             String replacement = uri == null ? "" : "src=\"" + uri + "\"";
             m.appendReplacement(out, Matcher.quoteReplacement(replacement));
         }
         m.appendTail(out);
         return out.toString();
+    }
+
+    private static String sanitizeSegment(String s) {
+        if (s == null || s.isBlank()) return "msg";
+        String safe = s.replaceAll("[^A-Za-z0-9._-]", "_");
+        return safe.isBlank() ? "msg" : safe;
     }
 
     private static String writeImageFile(InlineImage img, Path dir) {

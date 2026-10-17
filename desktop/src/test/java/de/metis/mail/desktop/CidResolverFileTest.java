@@ -24,8 +24,8 @@ class CidResolverFileTest {
                 List.of(new InlineImage("logo123", "image/png", PNG)), dir);
         assertTrue(out.contains("src=\"file:"), "erwartet file:-URI, war: " + out);
         assertFalse(out.contains("data:"));
-        // Datei wurde wirklich geschrieben
-        Path p = dir.resolve("logo123.png");
+        // Datei wurde wirklich geschrieben (im Unterordner der Mail)
+        Path p = dir.resolve("msg").resolve("logo123.png");
         assertTrue(Files.exists(p));
         assertArrayEquals(PNG, Files.readAllBytes(p));
     }
@@ -44,8 +44,8 @@ class CidResolverFileTest {
         String out = CidResolver.solveToFiles("<img src=\"cid:../evil\" alt=\"e\">",
                 List.of(new InlineImage("../evil", "image/png", PNG)), dir);
         assertTrue(out.contains("src=\"file:"));
-        Path p = dir.resolve(".._evil.png");
+        Path p = dir.resolve("msg").resolve(".._evil.png");
         assertTrue(Files.exists(p), "Dateiname wurde nicht sanitized");
-        assertFalse(Files.exists(dir.resolve("../evil.png")), "kein Pfadbruch erlaubt");
+        assertFalse(Files.exists(dir.resolve("msg").resolve("../evil.png")), "kein Pfadbruch erlaubt");
     }
 }
