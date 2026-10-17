@@ -49,6 +49,10 @@ public class HtmlSanitizer {
 
     private static final Set<String> SAFE_URL_SCHEMES = Set.of("http", "https", "mailto", "cid", "ftp");
 
+    /** Erlaubt nur eingebettete Rasterbilder (kein SVG, kein HTML) als data:-URI. */
+    private static final Pattern DATA_IMAGE =
+            Pattern.compile("^data:image/(png|jpe?g|gif|webp);base64,[a-z0-9+/]+=*$");
+
     /**
      * Sanitizes the provided HTML content. Never throws on malformed input.
      *
@@ -126,8 +130,12 @@ public class HtmlSanitizer {
                 removedItems.add("attr:" + name);
                 continue; // drops all on* handlers, style, etc.
             }
-            if (("href".equals(name) || "src".equals(name)) && !isSafeUrl(value)) {
-                removedItems.add("unsafe-url:" + value);
+            if ("href".equals(name) && !isSafeUrl(value)) {
+                removedItems.add("unsafe-url:" + name);
+                continue;
+            }
+            if ("src".equals(name) && !isSafeUrl(value) && !isSafeDataImage(value)) {
+                removedItems.add("unsafe-url:" + name);
                 continue;
             }
             out.append(' ').append(name).append("=\"").append(escape(value)).append('"');
@@ -148,6 +156,14 @@ public class HtmlSanitizer {
         }
         String scheme = u.substring(0, colon);
         return SAFE_URL_SCHEMES.contains(scheme);
+    }
+
+    /** Erlaubt nur eingebettete Rasterbilder (kein SVG, kein HTML). */
+    private boolean isSafeDataImage(String url) {
+        if (url == null) return false;
+        String u = url.strip().toLowerCase(Locale.ROOT)
+                .replaceAll("[\u0000-\u0020]", "");
+        return u.length() <= 8_000_000 && DATA_IMAGE.matcher(u).matches();
     }
 
     private String escape(String s) {
