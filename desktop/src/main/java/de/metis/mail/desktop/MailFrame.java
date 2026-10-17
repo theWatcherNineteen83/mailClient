@@ -716,7 +716,7 @@ public final class MailFrame extends JFrame {
             String text = bodies != null ? bodies[0] : null;
             if (html != null && !html.isBlank()) {
                 reader.setContentType("text/html");
-                String clean = sanitizer.sanitize(html);
+                String clean = inlineCidImages(m, sanitizer.sanitize(html));
                 String css = Theme.readerCss();
                 reader.setText(css.isEmpty() ? clean : "<style>" + css + "</style>" + clean);
                 if ("browser".equals(previewMode)) {
@@ -993,6 +993,28 @@ public final class MailFrame extends JFrame {
         }
     }
 
+    /** Ersetzt cid:-Verweise durch eingebettete Bilder der Mail (nach dem Sanitizer aufrufen). */
+    private String inlineCidImages(StoredMessage m, String sanitizedHtml) throws SQLException {
+        if (sanitizedHtml == null || !sanitizedHtml.toLowerCase(Locale.ROOT).contains("cid:")) {
+            return sanitizedHtml;
+        }
+        List<CidResolver.InlineImage> images = new ArrayList<>();
+        for (MailStore.StoredAttachment att : store.listAttachments(m.id())) {
+            if (att.contentId() == null || att.size() > 5_000_000) {
+                continue;
+            }
+            try {
+                byte[] data = store.readAttachment(att);
+                if (data != null) {
+                    images.add(new CidResolver.InlineImage(att.contentId(), att.mimeType(), data));
+                }
+            } catch (java.io.IOException e) {
+                // Bild nicht lesbar: der Verweis verliert dann sein src
+            }
+        }
+        return CidResolver.inline(sanitizedHtml, images);
+    }
+
     /** Schreibt die sanitisierte Mail in eine temporaere Datei und oeffnet sie im Systembrowser. */
     private void openPreviewInBrowser(String sanitizedHtml) {
         try {
@@ -1015,7 +1037,7 @@ public final class MailFrame extends JFrame {
             String[] bodies = store.getBodies(m.id());
             String html = bodies != null ? bodies[1] : null;
             String content = html != null && !html.isBlank()
-                    ? sanitizer.sanitize(html)
+                    ? inlineCidImages(m, sanitizer.sanitize(html))
                     : "<pre>" + escapeHtml(bodies != null ? bodies[0] : "") + "</pre>";
             openPreviewInBrowser(content);
         } catch (SQLException e) {
