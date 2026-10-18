@@ -47,6 +47,12 @@ public final class MailFrame extends JFrame {
     private final JList<MailStore.StoredAttachment> attachmentList = new JList<>(attachmentModel);
     private final JPanel attachmentPanel = new JPanel(new BorderLayout());
     private JPanel readerHost;
+    /** M4-004: Paging der Mail-Liste (500er-Seiten aus dem Store). */
+    private static final int PAGE_SIZE = 500;
+    private int pageIndex;
+    private int pageCount = 1;
+    private JButton prevPageBtn;
+    private JButton nextPageBtn;
     private final JLabel attachmentLabel = new JLabel();
 
     /** M4-004: SPF/DKIM/DMARC-Ampel ueber dem Leser. */
@@ -181,6 +187,16 @@ public final class MailFrame extends JFrame {
         readBtn.addActionListener(e -> markSelectedRead());
         delBtn.addActionListener(e -> deleteSelected());
         for (JButton b : new JButton[]{newBtn, replyBtn, fwdBtn, readBtn, delBtn}) {
+            b.setFocusable(false);
+            toolBar.add(b);
+        }
+        prevPageBtn = new JButton(I18n.tr("paging.prev"));
+        nextPageBtn = new JButton(I18n.tr("paging.next"));
+        prevPageBtn.setToolTipText(I18n.tr("paging.prev.tip"));
+        nextPageBtn.setToolTipText(I18n.tr("paging.next.tip"));
+        prevPageBtn.addActionListener(e -> changePage(-1));
+        nextPageBtn.addActionListener(e -> changePage(1));
+        for (JButton b : new JButton[]{prevPageBtn, nextPageBtn}) {
             b.setFocusable(false);
             toolBar.add(b);
         }
@@ -498,6 +514,7 @@ public final class MailFrame extends JFrame {
             folders.put(display, e.getValue());
             folderModel.addElement(display);
         }
+        pageIndex = 0;
         currentFolderDisplay = folderModel.isEmpty() ? null : folderModel.get(0);
         folderList.setSelectedValue(currentFolderDisplay, true);
         MailStore.StoredAccount acc = all == null ? null
@@ -536,6 +553,7 @@ public final class MailFrame extends JFrame {
         String sel = folderList.getSelectedValue();
         if (sel != null) {
             currentFolderDisplay = sel;
+            pageIndex = 0;
             reloadMessages();
             updateStatus();
         }
@@ -550,8 +568,13 @@ public final class MailFrame extends JFrame {
             // Im Papierkorb zeigen wir die soft-geloeschten Mails (M4-008).
             String q = effectiveQuery();
             List<StoredMessage> rows;
+            // Paging: nur die aktuelle 500er-Seite laden, Zaehler aus dem Store (M4-004).
+            int offset = pageIndex * PAGE_SIZE;
+            long total;
             if (isTrashSelected()) {
-                rows = store.listDeleted(folderId, 500, 0);
+                total = store.countDeleted(folderId);
+                if (q.isBlank()) rows = store.listDeleted(folderId, PAGE_SIZE, offset);
+                else { rows = store.listDeleted(folderId, Integer.MAX_VALUE, 0); offset = 0; }
                 if (!q.isBlank()) {
                     String needle = q.toLowerCase(Locale.ROOT);
                     rows = rows.stream().filter(m ->
@@ -561,9 +584,17 @@ public final class MailFrame extends JFrame {
                             .toList();
                 }
             } else {
+                total = q.isBlank() ? store.countMessages(folderId) : -1;
                 rows = q.isBlank()
-                        ? store.listMessages(folderId, 500, 0)
-                        : store.search(folderId, q, 500);
+                        ? store.listMessages(folderId, PAGE_SIZE, offset)
+                        : store.search(folderId, q, PAGE_SIZE);
+            }
+            int found = q.isBlank() ? (int) Math.max(total, 0) : rows.size();
+            pageCount = Math.max(1, (found + PAGE_SIZE - 1) / PAGE_SIZE);
+            if (pageIndex >= pageCount) {
+                pageIndex = pageCount - 1;
+                reloadMessages();
+                return;
             }
             if (groupedThreads) {
                 rows = new ArrayList<>(rows);
@@ -1130,7 +1161,25 @@ public final class MailFrame extends JFrame {
 
     private void updateStatus() {
         int n = tableModel.getRowCount();
-        statusLeft.setText(I18n.tr("status.count", n, currentFolderDisplay == null ? "-" : currentFolderDisplay));
+        String folder = currentFolderDisplay == null ? "-" : currentFolderDisplay;
+        if (pageCount > 1) {
+            statusLeft.setText(I18n.tr("status.count", n, folder)
+                    + "  ·  " + I18n.tr("paging.page", pageIndex + 1, pageCount));
+        } else {
+            statusLeft.setText(I18n.tr("status.count", n, folder));
+        }
+        if (prevPageBtn != null) prevPageBtn.setEnabled(pageIndex > 0);
+        if (nextPageBtn != null) nextPageBtn.setEnabled(pageIndex < pageCount - 1);
+    }
+
+    /** M4-004: Seitenwechsel in der Mail-Liste. */
+    private void changePage(int delta) {
+        int target = pageIndex + delta;
+        if (target < 0 || target >= pageCount) return;
+        pageIndex = target;
+        reloadMessages();
+        messageTable.clearSelection();
+        reader.setText("<html><body></body></html>");
     }
 
     /**
