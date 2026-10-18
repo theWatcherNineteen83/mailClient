@@ -59,6 +59,8 @@ public final class MailFrame extends JFrame {
     private final JLabel securityBadge = new JLabel();
     private final JLabel statusLeft = new JLabel();
     private final JLabel statusRight = new JLabel();
+    /** M4-008: dauerhafter Sync-Status des aktiven Kontos (aus UiSettings). */
+    private final JLabel syncStatusLabel = new JLabel();
     private final JToolBar toolBar = new JToolBar();
     private final JPanel centerPanel = new JPanel(new BorderLayout());
     private JSplitPane lastSplitA, lastSplitB;
@@ -161,7 +163,11 @@ public final class MailFrame extends JFrame {
         p.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
         statusRight.setHorizontalAlignment(SwingConstants.RIGHT);
         p.add(statusLeft, BorderLayout.WEST);
-        p.add(statusRight, BorderLayout.EAST);
+        syncStatusLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 12));
+        JPanel east = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        east.add(syncStatusLabel);
+        east.add(statusRight);
+        p.add(east, BorderLayout.EAST);
         return p;
     }
 
@@ -521,6 +527,7 @@ public final class MailFrame extends JFrame {
                 : all.stream().filter(a -> a.name().equals(accountName)).findFirst().orElse(null);
         String host = acc == null || acc.host() == null ? "-" : acc.host();
         accountHeader.setText(I18n.tr("account.header", accountName, host));
+        updateSyncStatusLabel();
         reloadMessages();
     }
 
@@ -1219,6 +1226,44 @@ public final class MailFrame extends JFrame {
         };
     }
 
+    /** M4-008: dauerhafter Sync-Status des aktiven Kontos (aus UiSettings, ueberlebt Neustart). */
+    private void updateSyncStatusLabel() {
+        if (syncStatusLabel == null) return;
+        String name = currentAccountName;
+        if (name == null) {
+            syncStatusLabel.setText("");
+            syncStatusLabel.setToolTipText(null);
+            return;
+        }
+        String raw = settings.get("sync.status." + name, "");
+        if (raw.isBlank()) {
+            syncStatusLabel.setText(I18n.tr("sync.status.never"));
+            syncStatusLabel.setToolTipText(null);
+            return;
+        }
+        String[] parts = raw.split("\\|", 3);
+        boolean ok = "ok".equals(parts[0]);
+        String when = parts.length > 1 ? formatSyncTime(parts[1]) : "?";
+        String detail = parts.length > 2 ? parts[2] : "";
+        syncStatusLabel.setText(ok
+                ? I18n.tr("sync.status.ok", when)
+                : I18n.tr("sync.status.fail", when));
+        syncStatusLabel.setToolTipText(ok
+                ? I18n.tr("sync.status.ok.tip", name, detail)
+                : I18n.tr("sync.status.fail.tip", name, detail));
+        syncStatusLabel.setForeground(ok ? new Color(0x2E7D32) : new Color(0xC62828));
+    }
+
+    private static String formatSyncTime(String epochMillis) {
+        try {
+            java.time.Instant t = java.time.Instant.ofEpochMilli(Long.parseLong(epochMillis));
+            return java.time.format.DateTimeFormatter.ofPattern("dd.MM. HH:mm")
+                    .withZone(java.time.ZoneId.systemDefault()).format(t);
+        } catch (NumberFormatException e) {
+            return "?";
+        }
+    }
+
     private void updateStatus() {
         int n = tableModel.getRowCount();
         String folder = currentFolderDisplay == null ? "-" : currentFolderDisplay;
@@ -1273,8 +1318,10 @@ public final class MailFrame extends JFrame {
             @Override
             protected void done() {
                 StringBuilder sb = new StringBuilder();
+                List<SyncService.SyncResult> results = new ArrayList<>();
                 try {
-                    for (SyncService.SyncResult r : get()) {
+                    results = get();
+                    for (SyncService.SyncResult r : results) {
                         if (sb.length() > 0) sb.append("  ·  ");
                         sb.append(r.ok()
                                 ? I18n.tr("sync.done", r.account(), r.fetched())
@@ -1285,6 +1332,15 @@ public final class MailFrame extends JFrame {
                     sb.append(I18n.tr("sync.fail", "-", String.valueOf(e.getMessage())));
                 }
                 statusLeft.setText(sb.toString());
+                // M4-008: Ergebnis je Konto persistieren und in der Statuszeile rechts anzeigen.
+                try {
+                    for (SyncService.SyncResult r : results) {
+                        settings.put("sync.status." + r.account(),
+                                (r.ok() ? "ok|" : "fail|") + System.currentTimeMillis() + "|"
+                                        + (r.ok() ? String.valueOf(r.fetched()) : String.valueOf(r.error())));
+                    }
+                } catch (Exception ignored) { }
+                updateSyncStatusLabel();
                 reloadMessages();
             }
         }.execute();
