@@ -139,6 +139,61 @@ public class ImapMailClient implements AutoCloseable {
         }
     }
 
+    /**
+     * M4-008: Setzt Flags einer Mail auf dem Server, adressiert ueber die Message-ID
+     * (spitze Klammern optional). UTF-7-kodierte Ordner
+     * funktionieren nicht ueber diesen Weg und liefern {@code false}.
+     */
+    public boolean applyFlags(String folderName, String messageId, boolean unseen,
+                              Boolean flagged, boolean deleted) throws MessagingException {
+        requireConnection();
+        Folder folder = store.getFolder(folderName);
+        folder.open(Folder.READ_WRITE);
+        try {
+            String needle = messageId.trim();
+            if (needle.startsWith("<") && needle.endsWith(">")) {
+                needle = needle.substring(1, needle.length() - 1);
+            }
+            for (Message m : searchByMessageId(folder, needle)) {
+                m.setFlag(Flags.Flag.SEEN, !unseen);
+                if (flagged != null) m.setFlag(Flags.Flag.FLAGGED, flagged);
+                m.setFlag(Flags.Flag.DELETED, deleted);
+                return true;
+            }
+            return false;
+        } finally {
+            // Kein expunge: DELETED bleibt als Flag bestehen, damit sich Aenderungen
+            // rueckgaengig machen lassen (restore = setFlag DELETED false).
+            folder.close(false);
+        }
+    }
+
+    /**
+     * Liefert die Mails, deren Message-ID-Header passt. GreenMail und einige
+     * IMAP-Server ignorieren HEADER-SEARCH auf Message-ID, daher wird die
+     * Kopfzeile lokal geprueft (Ordner ist beim Aufruf bereits geoeffnet).
+     */
+    private static java.util.List<Message> searchByMessageId(Folder folder, String messageId)
+            throws MessagingException {
+        java.util.List<Message> hits = new java.util.ArrayList<>();
+        for (Message m : folder.getMessages()) {
+            String[] values = m.getHeader("Message-ID");
+            if (values == null) continue;
+            for (String v : values) {
+                if (v == null) continue;
+                String norm = v.trim();
+                if (norm.startsWith("<") && norm.endsWith(">")) {
+                    norm = norm.substring(1, norm.length() - 1);
+                }
+                if (norm.equals(messageId)) {
+                    hits.add(m);
+                    break;
+                }
+            }
+        }
+        return hits;
+    }
+
     private void requireConnection() throws MessagingException {
         if (!isConnected()) {
             throw new IllegalStateException("IMAP client is not connected; call connect() first");

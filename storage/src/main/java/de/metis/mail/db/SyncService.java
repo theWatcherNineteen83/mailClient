@@ -46,8 +46,7 @@ public final class SyncService {
             return new SyncResult(acc.name(), 0, 0, "Keine Zugangsdaten hinterlegt");
         }
         try {
-            MailClientConfig cfg = new MailClientConfig(acc.host(), acc.port(), acc.username(),
-                    acc.password(), securityOf(acc.security()));
+            MailClientConfig cfg = cfgOf(acc);
             List<MailMessage> fetched = "pop3".equalsIgnoreCase(acc.protocol())
                     ? fetchPop3(cfg, max) : fetchImap(cfg, max);
             long folderId = store.getOrCreateFolder(acc.id(), INBOX_LOCAL);
@@ -61,6 +60,43 @@ public final class SyncService {
             String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
             return new SyncResult(acc.name(), 0, 0, msg);
         }
+    }
+
+    // ---------- Flags zum Server (M4-008) ----------
+
+    /** Ergebnis eines Flag-Syncs zum IMAP-Server. */
+    public record FlagResult(boolean ok, String error) { }
+
+    /**
+     * Melde eine lokale Flag-Aenderung an den IMAP-Server (M4-008).
+     * Nur IMAP-Konten mit Zugangsdaten; POP3/local-only liefern {@code ok=false}
+     * mit Begruendung, damit die UI den Fall offen anzeigen kann statt zu schweigen.
+     */
+    public FlagResult pushFlag(MailStore.StoredAccount acc, String remoteId, String folderName,
+                               boolean unseen, Boolean flagged, boolean deleted) {
+        if (!hasCredentials(acc)) {
+            return new FlagResult(false, "Keine Zugangsdaten hinterlegt");
+        }
+        if ("pop3".equalsIgnoreCase(acc.protocol())) {
+            return new FlagResult(false, "POP3 kann keine Flags auf dem Server setzen");
+        }
+        if (remoteId == null || remoteId.isBlank()) {
+            return new FlagResult(false, "Keine Message-ID fuer die Server-Zuordnung");
+        }
+        try (ImapMailClient c = new ImapMailClient(cfgOf(acc))) {
+            c.connect();
+            return c.applyFlags(folderName, remoteId, unseen, flagged, deleted)
+                    ? new FlagResult(true, null)
+                    : new FlagResult(false, "Mail auf dem Server nicht gefunden");
+        } catch (Exception e) {
+            String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+            return new FlagResult(false, msg);
+        }
+    }
+
+    private static MailClientConfig cfgOf(MailStore.StoredAccount acc) {
+        return new MailClientConfig(acc.host(), acc.port(), acc.username(), acc.password(),
+                securityOf(acc.security()));
     }
 
     // ---------- Empfang ----------

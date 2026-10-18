@@ -774,10 +774,69 @@ public final class MailFrame extends JFrame {
     }
 
     private void markSelectedRead() {
+        List<StoredMessage> rows = new ArrayList<>(visibleRows());
         try {
-            for (StoredMessage m : visibleRows()) store.setUnseen(m.id(), false);
+            for (StoredMessage m : rows) store.setUnseen(m.id(), false);
             reloadMessages();
         } catch (SQLException ignored) { }
+        // M4-008: Flag-Aenderung zusaetzlich zum IMAP-Server spiegeln (im Hintergrund).
+        pushFlagRemote(rows, false);
+    }
+
+    /**
+     * M4-008: Spiegelt eine lokale Flag-Aenderung (gesehen bzw. geloescht) auf den
+     * IMAP-Server. Laeuft im Hintergrund; Fehler landen in der Statuszeile.
+     */
+    private void pushFlagRemote(List<StoredMessage> changed, boolean deletedFlag) {
+        if (changed == null || changed.isEmpty()) return;
+        MailStore.StoredAccount acc = accountByName(currentAccountName);
+        if (acc == null || !SyncService.hasCredentials(acc)
+                || "pop3".equalsIgnoreCase(acc.protocol())) {
+            return; // Demo-/POP3-Konten haben keinen Server-Ordner fuer Flags
+        }
+        String remoteFolder = remoteFolderFor(currentFolderDisplay);
+        new SwingWorker<List<String>, Void>() {
+            @Override protected List<String> doInBackground() {
+                SyncService sync = new SyncService();
+                List<String> errors = new ArrayList<>();
+                for (StoredMessage m : changed) {
+                    SyncService.FlagResult r = sync.pushFlag(acc, m.messageId(), remoteFolder,
+                            !m.unseen(), null, deletedFlag);
+                    if (!r.ok() && r.error() != null) errors.add(m.subject() + ": " + r.error());
+                }
+                return errors;
+            }
+            @Override protected void done() {
+                try {
+                    List<String> errors = get();
+                    if (!errors.isEmpty()) statusRight.setText(I18n.tr("sync.flags.fail", errors.get(0)));
+                } catch (Exception e) {
+                    statusRight.setText(I18n.tr("sync.flags.fail", String.valueOf(e.getMessage())));
+                }
+            }
+        }.execute();
+    }
+
+    /** Konto-Record zum aktuellen Umschalter-Wert (null bei Demo/keinem Konto). */
+    private MailStore.StoredAccount accountByName(String name) {
+        if (name == null) return null;
+        try {
+            for (MailStore.StoredAccount a : store.listAccounts()) {
+                if (name.equals(a.name())) return a;
+            }
+        } catch (SQLException ignored) { }
+        return null;
+    }
+
+    /**
+     * Lokaler Ordner -> IMAP-Ordnername. Setzt voraus, dass lokale Standardordner
+     * Server-Ordnern gleichen Namens entsprechen (Testkonten: GreenMail-INBOX).
+     */
+    private String remoteFolderFor(String display) {
+        String key = folderKeyByDisplay.get(display);
+        if ("folder.trash".equals(key)) return "Trash";
+        if ("folder.sent".equals(key)) return "Sent";
+        return "INBOX";
     }
 
     // ---------- Aktionen: Compose, Antwort, Weiterleitung, Löschen ----------
@@ -935,6 +994,7 @@ public final class MailFrame extends JFrame {
                 statusLeft.setText(inTrash
                         ? I18n.tr("status.purged", m.subject())
                         : I18n.tr("status.deleted", m.subject()));
+                if (!inTrash) pushFlagRemote(List.of(m), true);
                 reloadMessages();
             }
         }.execute();
