@@ -34,7 +34,7 @@ Der Start loggt den benutzten Ordner. Inhalt: `mail.sqlite`, `attachments/`, `ke
 | `de.metis.mail.storage` | `MboxSplitter`, `SearchQueryBuilder` | mbox → EML; sichere SQL-Suchklauseln (Platzhalter, ESCAPE) |
 | `de.metis.mail.module` | `ClamdClient` | ClamAV TCP-Client (PING/VERSION/INSTREAM, 4-Byte-Längenpräfix) |
 | `de.metis.mail.protocol` | `ImapMailClient`, `Pop3MailClient`, `SmtpMailClient`, `MailClientConfig`, `MessageConverter` | IMAP/POP3/SMTP via Jakarta Mail |
-| `de.metis.mail.db` | `MailStore`, `StoredMessage`, `SyncItem`, `SyncService` | SQLite (Schema v3: accounts/folders/messages/attachments + auth_spf/dkim/dmarc), Suche, Papierkorb, Sync |
+| `de.metis.mail.db` | `MailStore`, `StoredMessage`, `SyncItem`, `SyncService` | SQLite (Schema v4: accounts/folders/messages/attachments + auth_spf/dkim/dmarc + content_id), Suche, Papierkorb, Sync |
 | `de.metis.mail.sync`, `...threading` | `MailSyncService`, `MessageThreader` | Sync-Pipeline, JWZ-Threading |
 | `de.metis.mail.desktop` | `MailDesktopApp`, `MailFrame`, `AccountDialog`, `ComposeDialog`, `AppPaths`, `PreviewExport`, `Theme`, `UiSettings`, `LayoutPreset`, `I18n`, `DemoData` | Swing-Shell (M4): Konten-CRUD, Sync, Papierkorb, Suche, Sicherheits-Ampel, Vorschau, Design/Layouts, DE/EN |
 
@@ -104,7 +104,9 @@ als Dateien auf Disk, nur Metadaten in der DB (hält die DB schlank).
   Systembrowser**, **wählbarer Ablageort (portabel / Benutzerprofil)**, Threading-Umschaltung,
   Spam-Prozent-Ampel, Build+Release über GitHub Actions,
   **SMTP-Versand mit Anhängen** (M4-007), **Anhang-Leiste im Leser** öffnen/speichern (M4-006)
-  - *Offen:* Paging-UI, HiDPI/Tray, Flag- und Lösch-Sync zum IMAP-Server
+  - **Seit 19.10.2026 zusätzlich:** **Paging-UI** (500er-Seiten, Zurück/Weiter, „Seite X von Y“), **Flag-/Lösch-Sync zum IMAP-Server** (gesehen/flag/gelöscht über Message-ID, reversibel ohne expunge) und **dauerhafte Sync-Statusanzeige je Konto**,
+  **Tracking-Schutz**: die integrierte Vorschau entfernt entfernte Bilder (`img src` http/https/ftp), Opt-in per Ansicht → „Bilder dieses Absenders laden“. Teststand: **223 JUnit-5-Tests, 0 Failures**.
+  - *Offen:* HiDPI/Tray (Backlog), Android-UI (M5)
 - **M5:** Android-UI
 
 Details: [.specify/tasks.md](.specify/tasks.md) · UI-Vorgabe: [.specify/spec-ui.md](.specify/spec-ui.md)
