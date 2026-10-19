@@ -60,11 +60,22 @@ public class HtmlSanitizer {
      * @return The sanitized HTML string.
      */
     public String sanitize(String html) {
+        return sanitize(html, false);
+    }
+
+    /**
+     * M4-010: Vorschau-Modus. Mit {@code stripRemoteImages} verlieren
+     * {@code <img src="http(s)|ftp:...">} ihr src-Attribut, damit die
+     * JEditorPane-Ansicht (ohne CSP) keine Tracking-Pixel nachlaedt.
+     * Alt-Text bleibt erhalten. data:/cid:/file: und relative Pfade bleiben unberuehrt.
+     */
+    public String sanitize(String html, boolean stripRemoteImages) {
         if (html == null || html.isEmpty()) {
             return "";
         }
 
         List<String> removedItems = new ArrayList<>();
+        remoteStripped = 0;
         String work = html;
 
         // 0. Strip comments (can hide conditional script tricks)
@@ -78,7 +89,7 @@ public class HtmlSanitizer {
         }
 
         // 2. Rewrite remaining tags: drop disallowed tags, filter attributes
-        String result = rewrite(work, removedItems);
+        String result = rewrite(work, removedItems, stripRemoteImages);
 
         LOG.info("Sanitization complete. Removed: "
                 + removedItems.stream().distinct().collect(Collectors.joining(", ")));
@@ -86,7 +97,7 @@ public class HtmlSanitizer {
     }
 
     /** Single-pass tag rewriting with proper tail handling. */
-    private String rewrite(String work, List<String> removedItems) {
+    private String rewrite(String work, List<String> removedItems, boolean stripRemoteImages) {
         Matcher m = TAG_PATTERN.matcher(work);
         StringBuilder sb = new StringBuilder();
         int last = 0;
@@ -106,7 +117,9 @@ public class HtmlSanitizer {
             if (closing) {
                 sb.append("</").append(tagName).append('>');
             } else {
-                sb.append('<').append(tagName).append(filterAttributes(rawAttrs, removedItems));
+                sb.append('<').append(tagName)
+                        .append(filterAttributes(rawAttrs, removedItems,
+                                stripRemoteImages && "img".equals(tagName)));
                 sb.append(selfClosing ? "/>" : ">");
             }
         }
@@ -115,7 +128,8 @@ public class HtmlSanitizer {
     }
 
     /** Keeps only whitelisted attributes with safe values. */
-    private String filterAttributes(String rawAttrs, List<String> removedItems) {
+    private String filterAttributes(String rawAttrs, List<String> removedItems,
+                                   boolean stripRemoteSrc) {
         if (rawAttrs == null || rawAttrs.isBlank()) {
             return "";
         }
@@ -134,6 +148,11 @@ public class HtmlSanitizer {
                 removedItems.add("unsafe-url:" + name);
                 continue;
             }
+            if ("src".equals(name) && stripRemoteSrc && isRemoteUrl(value)) {
+                remoteStripped++;
+                removedItems.add("remote-img");
+                continue; // M4-010: Tracking-Pixel gar nicht erst laden
+            }
             if ("src".equals(name) && !isSafeUrl(value) && !isSafeDataImage(value)) {
                 removedItems.add("unsafe-url:" + name);
                 continue;
@@ -141,6 +160,21 @@ public class HtmlSanitizer {
             out.append(' ').append(name).append("=\"").append(escape(value)).append('"');
         }
         return out.toString();
+    }
+
+    /** http/https/ftp = entfernte Ressource (potenzielles Tracking). */
+    private boolean isRemoteUrl(String url) {
+        if (url == null) return false;
+        String u = url.strip().toLowerCase(Locale.ROOT)
+                .replaceAll("[\u0000-\u0020]", "");
+        return u.startsWith("http:") || u.startsWith("https:") || u.startsWith("ftp:");
+    }
+
+    /** Zaehler der im Vorschau-Modus unterdrueckten Remote-Bilder (fuer die UI). */
+    private int remoteStripped;
+
+    public int lastRemoteImagesStripped() {
+        return remoteStripped;
     }
 
     private boolean isSafeUrl(String url) {

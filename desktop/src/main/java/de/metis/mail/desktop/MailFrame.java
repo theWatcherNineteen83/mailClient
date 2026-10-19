@@ -290,6 +290,7 @@ public final class MailFrame extends JFrame {
             previews.add(m);
         }
         view.add(item(I18n.tr("menu.view.openbrowser"), this::openSelectedInBrowser));
+        view.add(item(I18n.tr("menu.view.loadimages"), this::allowImagesForSender));
         view.addSeparator();
         JCheckBoxMenuItem thr = new JCheckBoxMenuItem(I18n.tr("menu.view.threads"), groupedThreads);
         thr.addActionListener(e -> {
@@ -754,7 +755,11 @@ public final class MailFrame extends JFrame {
             String text = bodies != null ? bodies[0] : null;
             if (html != null && !html.isBlank()) {
                 reader.setContentType("text/html");
-                String clean = CidResolver.solveToFiles(sanitizer.sanitize(html), loadInlineImages(m), preview.dir(), String.valueOf(m.id()));
+                boolean loadRemote = imagesAllowedFor(m.fromAddr());
+                String clean = CidResolver.solveToFiles(sanitizer.sanitize(html, !loadRemote), loadInlineImages(m), preview.dir(), String.valueOf(m.id()));
+                if (!loadRemote && sanitizer.lastRemoteImagesStripped() > 0) {
+                    statusRight.setText(I18n.tr("preview.remote.blocked", sanitizer.lastRemoteImagesStripped()));
+                }
                 String css = Theme.readerCss();
                 reader.setText(css.isEmpty() ? clean : "<style>" + css + "</style>" + clean);
                 if ("browser".equals(previewMode)) {
@@ -1142,6 +1147,23 @@ public final class MailFrame extends JFrame {
 
     private static String escapeHtml(String text) {
         return text == null ? "" : text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
+    /** M4-010: Opt-in pro Absender — dann laedt die Vorschau dessen Bilder. */
+    private boolean imagesAllowedFor(String fromAddr) {
+        if (fromAddr == null || fromAddr.isBlank()) return false;
+        return "true".equals(settings.get("preview.images." + fromAddr.toLowerCase(Locale.ROOT), "false"));
+    }
+
+    private void allowImagesForSender() {
+        StoredMessage m = selectedMessage();
+        if (m == null || m.fromAddr() == null || m.fromAddr().isBlank()) {
+            statusRight.setText(I18n.tr("status.noselection"));
+            return;
+        }
+        settings.put("preview.images." + m.fromAddr().toLowerCase(Locale.ROOT), "true");
+        statusRight.setText(I18n.tr("preview.remote.allowed", m.fromAddr()));
+        onMessageSelected();
     }
 
     /** true, wenn der aktuell gewaehlte Ordner der Papierkorb ist. */
